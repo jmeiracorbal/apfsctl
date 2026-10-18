@@ -7,7 +7,10 @@ import (
 )
 
 func TestMutationRequiresExistingEmptyMountDirectory(t *testing.T) {
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	missing := filepath.Join(root, "repos")
 	if err := validateWritableMountTarget(missing); err == nil {
 		t.Fatal("missing directory must be rejected before mutation")
