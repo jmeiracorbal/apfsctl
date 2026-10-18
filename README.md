@@ -4,9 +4,9 @@ CLI Go para gestionar volúmenes APFS cifrados para repositorios de desarrollo e
 
 ## Estado
 
-**Hito 3: aprovisionamiento experimental.** Están implementados el descubrimiento, el diagnóstico y los comandos `create` y `mount`. Todavía **no se ha validado el aprovisionamiento contra APFS real** en un Mac. Se recomienda probarlo primero en un contenedor APFS de pruebas con copia de seguridad.
+**Hitos 3 y 4: aprovisionamiento y configuración experimentales.** Están implementados el descubrimiento, el diagnóstico y los comandos `create`, `mount` y `configure`. Todavía **no se han validado las operaciones privilegiadas sobre APFS real** ni el montaje tras reiniciar macOS. La primera prueba debe realizarse con un contenedor desechable y copia de seguridad.
 
-No están implementados el montaje persistente (`fstab`), las políticas de Spotlight/FSEvents, ni los comandos `unmount` y `remove`. La titularidad de archivos del nuevo volumen tampoco se modifica automáticamente.
+Se implementa la edición idempotente de `fstab` y las políticas de Spotlight, FSEvents y propietario mediante `configure`. No están implementados `unmount` ni `remove`. El desbloqueo automático al arrancar tampoco está implementado; `fstab` únicamente conserva la configuración de montaje.
 
 ## Requisitos
 
@@ -69,6 +69,8 @@ No se adoptan volúmenes con roles de sistema; los conflictos de nombres, UUID, 
 - `internal/apfs`: adaptador estructurado para `diskutil`.
 - `internal/provision`: orquestación y verificación de operaciones.
 - `internal/state`: diario atómico y bloqueo entre procesos.
+- `internal/mount`: reconciliación de `fstab` con `vifs`.
+- `internal/policy`: políticas del volumen y permisos.
 - `internal/system`: ejecución de comandos sin intérprete de shell.
 
 No se ejecutan scripts Bash, `sh -c` ni comandos construidos concatenando argumentos. Todas las modificaciones usan una llamada a una utilidad nativa con lista explícita de argumentos.
@@ -92,6 +94,6 @@ Repetir el comando cuando las políticas ya coinciden devuelve `noop: true`. La 
 
 ## Limitaciones importantes
 
-El cifrado y el montaje APFS se reconcilian en el paso 3; **la configuración completa del sistema no**. El resultado `noop` no comprueba aún `fstab`, Spotlight, FSEvents, propiedad del directorio raíz del nuevo volumen ni política de copias de seguridad. La gestión de esas políticas pertenece al paso 4.
+El comando `plan` evalúa exclusivamente cifrado y montaje APFS. El comando `configure` reconcilia `fstab`, Spotlight, FSEvents (solo si se solicita) y propietario (solo si se especifica UID). No se comprueba todavía la política de copias de seguridad ni se automatiza el desbloqueo durante el arranque. Las operaciones de `configure` requieren validación en macOS real.
 
 **No ejecutar en datos importantes sin revisar la salida de `plan` y disponer de una copia de seguridad.**
