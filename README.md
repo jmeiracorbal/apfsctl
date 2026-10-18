@@ -1,63 +1,53 @@
 # devvolume
 
-[![CI](https://github.com/jmeiracorbal/verbose-octo-spork/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jmeiracorbal/verbose-octo-spork/actions/workflows/ci.yml)
-![macOS](https://img.shields.io/badge/platform-macOS-222222?logo=apple&logoColor=white)
-![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)
-[![Pre-release](https://img.shields.io/badge/release-v0.1.0--beta.1-orange)](https://github.com/jmeiracorbal/verbose-octo-spork/releases/tag/v0.1.0-beta.1)
+![macOS](https://img.shields.io/badge/platform-macOS-222222)
+![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8)
+[![Beta](https://img.shields.io/badge/version-v0.1.0--beta.1-orange)](https://github.com/jmeiracorbal/verbose-octo-spork/releases/tag/v0.1.0-beta.1)
 
-**devvolume** is a Go CLI for managing dedicated, encrypted APFS volumes for development repositories on macOS. It compares the desired configuration with the live system state before making changes, and skips operations that are already satisfied.
+## Objective
 
-> **Beta:** APFS mutations, `vifs` integration, and persistence across reboot have not yet been tested on a real Mac. Test with a disposable volume and a verified backup. Binaries are not code-signed or notarized.
+Manage dedicated, encrypted APFS volumes for development repositories on macOS through an idempotent Go CLI. Changes are planned from the actual system state and applied only when necessary.
 
-## Install
+## Features
 
-Download the archive for your Mac and `checksums.txt` from [v0.1.0-beta.1](https://github.com/jmeiracorbal/verbose-octo-spork/releases/tag/v0.1.0-beta.1):
+- Create, unlock, and mount encrypted APFS volumes.
+- Inspect system state with `status`, `doctor`, and `plan`.
+- Reconcile configuration without repeating completed operations; reject conflicts rather than overwrite existing data.
+- Recover safely from interrupted operations using a private journal and an exclusive lock.
+- Configure persistent mount entries, Spotlight, optional FSEvents suppression, and non-recursive volume ownership.
+- Execute macOS utilities directly without generating Bash scripts.
 
-- **Apple Silicon:** `devvolume_v0.1.0-beta.1_darwin_arm64.tar.gz`
-- **Intel:** `devvolume_v0.1.0-beta.1_darwin_amd64.tar.gz`
+## Requirements
 
-Verify the archive against `checksums.txt`, then extract it. For Apple Silicon:
+- macOS with APFS; Apple Silicon or Intel.
+- Administrator access for volume changes and an interactive terminal for encryption prompts.
+- An existing, empty mount directory.
+- Go 1.22+ only when building from source.
+
+**Experimental beta:** Privileged APFS operations and reboot behavior still require testing on real hardware. Use a disposable volume and a backup. `fstab` does not automatically unlock encrypted volumes. `unmount` and `remove` are not yet implemented.
+
+## Installation
+
+Download the appropriate archive from [Releases](https://github.com/jmeiracorbal/verbose-octo-spork/releases/tag/v0.1.0-beta.1):
+
+- Apple Silicon: `devvolume_v0.1.0-beta.1_darwin_arm64.tar.gz`
+- Intel: `devvolume_v0.1.0-beta.1_darwin_amd64.tar.gz`
+
+Extract and install it (Apple Silicon example; replace `arm64` with `amd64` on Intel):
 
 ```sh
-grep 'devvolume_v0.1.0-beta.1_darwin_arm64.tar.gz$' checksums.txt | shasum -a 256 -c -
 tar -xzf devvolume_v0.1.0-beta.1_darwin_arm64.tar.gz
 mkdir -p "$HOME/.local/bin"
 install -m 0755 devvolume "$HOME/.local/bin/devvolume"
 "$HOME/.local/bin/devvolume" version
 ```
 
-Use the `amd64` filename on Intel. Alternatively, build with Go 1.22 or newer: `go build -o devvolume ./cmd/devvolume`.
-
-## Usage
-
-Set `DEVVOLUME="$HOME/.local/bin/devvolume"` or invoke the binary directly.
+Alternatively, build from source:
 
 ```sh
-DEVVOLUME="$HOME/.local/bin/devvolume"
-
-"$DEVVOLUME" status
-"$DEVVOLUME" doctor
-"$DEVVOLUME" plan --container CONTAINER_UUID --name repos --mount "$HOME/repos"
-
-mkdir -p "$HOME/repos"
-sudo "$DEVVOLUME" create --container CONTAINER_UUID --name repos --mount "$HOME/repos"
-sudo "$DEVVOLUME" configure --container CONTAINER_UUID --name repos --mount "$HOME/repos" \
-  --uid "$(id -u)" --spotlight off --fsevents keep
+go build -o devvolume ./cmd/devvolume
 ```
 
-Get `CONTAINER_UUID` from `status`. Review `plan` before `create`. The mount directory must already exist and be empty; mutations require administrator privileges. `mount` unlocks or mounts an **existing** encrypted volume and never creates one.
+## References
 
-## Behavior and limitations
-
-- **Idempotent reconciliation:** a matching APFS volume or system policy is not changed again; conflicting states fail closed.
-- **Encryption:** `diskutil` prompts interactively. Passphrases are not stored in arguments, logs, or the recovery journal.
-- **Recovery:** exclusive process locking and a private operation journal prevent duplicate work after interruptions.
-- **System policies:** `configure` manages the `fstab` UUID entry through `vifs`, Spotlight, optional FSEvents logging suppression, and non-recursive ownership changes.
-- **Mounting at boot:** `fstab` stores the mount configuration **but does not unlock an encrypted APFS volume automatically**.
-- **Not implemented:** `unmount`, `remove`, automated unlock at login, and backup-policy verification.
-
-Run `go test -race ./...` and `go vet ./...` to execute the automated checks. No Bash scripts are generated by the CLI.
-
-## Credits
-
-Inspired by [`repos-volume.sh` in elithrar/dotfiles](https://github.com/elithrar/dotfiles/blob/main/repos-volume.sh), which demonstrates a separate APFS volume for development repositories. devvolume is an independent Go implementation with encryption, state reconciliation, and recovery safeguards.
+Inspired by [`repos-volume.sh` from elithrar/dotfiles](https://github.com/elithrar/dotfiles/blob/main/repos-volume.sh). devvolume is an independent Go implementation.
