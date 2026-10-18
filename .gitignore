@@ -1,0 +1,6 @@
+.DS_Store
+*.test
+coverage.out
+bin/
+.idea/
+.vscode/
