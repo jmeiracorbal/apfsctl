@@ -31,6 +31,10 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 1 && args[0] == "version" {
+		_, err := fmt.Fprintln(stdout, version)
+		return err
+	}
 	if len(args) == 0 {
 		return errors.New("usage: devvolume status | plan | doctor | create | mount | configure | unmount | remove")
 	}

@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/release-notes/**"
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "README.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: devvolume-v0.1.0-beta.1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Test
+        run: |
+          go test -race ./...
+          go vet ./...
+          test -z "$(gofmt -l cmd internal)"
+      - name: Build and publish beta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.1.0-beta.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; skipping."
+            exit 0
+          fi
+          mkdir -p dist
+          for arch in arm64 amd64; do
+            mkdir -p "dist/$arch"
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X main.version=$TAG" \
+              -o "dist/$arch/devvolume" ./cmd/devvolume
+            archive="devvolume_${TAG}_darwin_${arch}.tar.gz"
+            tar -czf "dist/$archive" -C "dist/$arch" devvolume
+          done
+          (
+            cd dist
+            shasum -a 256 ./*.tar.gz > checksums.txt
+          )
+          gh release create "$TAG" dist/*.tar.gz dist/checksums.txt \
+            --target "$GITHUB_SHA" \
+            --title "devvolume $TAG" \
+            --notes-file .github/release-notes/v0.1.0-beta.1.md \
+            --prerelease
