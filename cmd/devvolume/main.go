@@ -16,8 +16,8 @@ import (
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/apfs"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/diagnostic"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/provision"
+	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/state"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/system"
 )
@@ -111,9 +111,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 				return errors.New("APFS mutation requires root; run with sudo and an explicit --mount path")
 			}
 			svc := provision.Service{
-				Platform: apfs.Mutator{Read: client, Interactive: system.ExecRunner{}},
-				Journal: state.FileJournal{Directory: "/private/var/db/devvolume"},
-				Lock: state.FileLock{Path: "/private/var/db/devvolume/operation.lock"},
+				Platform:      apfs.Mutator{Read: client, Interactive: system.ExecRunner{}},
+				Journal:       state.FileJournal{Directory: "/private/var/db/devvolume"},
+				Lock:          state.FileLock{Path: "/private/var/db/devvolume/operation.lock"},
 				ValidateMount: validateWritableMountTarget,
 			}
 			result, err := svc.Apply(ctx, *desired, args[0] == "create")

@@ -60,6 +60,7 @@ type memoryJournal struct {
 	entry *state.Entry
 	saves int
 }
+
 func (m *memoryJournal) Load(d domain.Desired) (*state.Entry, error) {
 	if m.entry != nil && m.entry.Desired != d {
 		return nil, errors.New("journal conflict")
@@ -73,6 +74,7 @@ func (m *memoryJournal) Save(e state.Entry) error {
 }
 
 type fakeLock struct{ acquisitions int }
+
 func (l *fakeLock) Acquire() (func() error, error) {
 	l.acquisitions++
 	return func() error { return nil }, nil
@@ -82,7 +84,7 @@ func fixture() (domain.Desired, *fakePlatform, *memoryJournal, *fakeLock, Servic
 	d := domain.Desired{Name: "repos", ContainerUUID: "C", MountPoint: "/Users/test/repos", Encrypted: true}
 	f := &fakePlatform{snapshot: domain.Snapshot{
 		Containers: []domain.Container{{UUID: "C", Reference: "disk3", FreeBytes: 10_000_000_000}},
-		Volumes: []domain.Volume{},
+		Volumes:    []domain.Volume{},
 	}}
 	j := &memoryJournal{}
 	l := &fakeLock{}
