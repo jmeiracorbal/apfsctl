@@ -8,15 +8,17 @@ import (
 )
 
 type fakePlatform struct {
-	fstab bool
+	fstab     bool
 	spotlight bool
-	events bool
-	owner int
-	writes []string
+	events    bool
+	owner     int
+	writes    []string
 }
 
 func (f *fakePlatform) EnsureFstab(_ context.Context, _, _ string) (bool, error) {
-	if f.fstab { return false, nil }
+	if f.fstab {
+		return false, nil
+	}
 	f.fstab = true
 	f.writes = append(f.writes, "fstab")
 	return true, nil
@@ -43,6 +45,7 @@ func (f *fakePlatform) ChangeOwner(_ string, uid int) error {
 }
 
 type fakeLock struct{ n int }
+
 func (l *fakeLock) Acquire() (func() error, error) {
 	l.n++
 	return func() error { return nil }, nil
@@ -54,7 +57,9 @@ func TestApplyIdempotentAndPreservesFSEvents(t *testing.T) {
 	svc := Service{Platform: p, Lock: lock, VerifyMount: func(context.Context) error { return nil }}
 	d := Desired{VolumeUUID: "A", MountPoint: "/test", OwnerUID: 501, SpotlightOff: true}
 	got, err := svc.Apply(context.Background(), d)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.Noop || !reflect.DeepEqual(p.writes, []string{"fstab", "spotlight", "owner"}) || p.events {
 		t.Fatalf("unexpected mutations: %+v", p)
 	}
@@ -78,7 +83,11 @@ func TestOptionalDisableEvents(t *testing.T) {
 	p := &fakePlatform{fstab: true}
 	svc := Service{Platform: p, Lock: &fakeLock{}, VerifyMount: func(context.Context) error { return nil }}
 	_, err := svc.Apply(context.Background(), Desired{DisableFSEvents: true, OwnerUID: -1})
-	if err != nil || !p.events { t.Fatalf("marker should be added: %v", err) }
+	if err != nil || !p.events {
+		t.Fatalf("marker should be added: %v", err)
+	}
 	_, err = svc.Apply(context.Background(), Desired{DisableFSEvents: true, OwnerUID: -1})
-	if err != nil || len(p.writes) != 1 { t.Fatalf("must not rewrite marker: %v", err) }
+	if err != nil || len(p.writes) != 1 {
+		t.Fatalf("must not rewrite marker: %v", err)
+	}
 }

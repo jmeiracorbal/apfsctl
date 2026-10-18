@@ -26,8 +26,8 @@ func TestMergeIsIdempotent(t *testing.T) {
 func TestMergeConflicts(t *testing.T) {
 	e := Entry{UUID: uuid, Path: "/Users/developer/repos"}
 	for _, contents := range []string{
-		"UUID="+uuid+" /other apfs rw\n",
-		"UUID="+uuid+" /Users/developer/repos apfs rw,noauto\n",
+		"UUID=" + uuid + " /other apfs rw\n",
+		"UUID=" + uuid + " /Users/developer/repos apfs rw,noauto\n",
 		"UUID=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa /Users/developer/repos apfs rw\n",
 		"invalid record\n",
 	} {
