@@ -1,8 +1,8 @@
-# devvolume
+# apfsctl
 
 ![macOS](https://img.shields.io/badge/platform-macOS-222222)
 ![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8)
-[![Beta](https://img.shields.io/badge/version-v0.1.0--beta.1-orange)](https://github.com/jmeiracorbal/verbose-octo-spork/releases/tag/v0.1.0-beta.1)
+[![Beta](https://img.shields.io/badge/version-v0.1.0--beta.1-orange)](https://github.com/jmeiracorbal/apfsctl/releases/tag/v0.2.0-beta.1)
 
 ## Objective
 
@@ -28,26 +28,26 @@ Manage dedicated, encrypted APFS volumes for development repositories on macOS t
 
 ## Installation
 
-Download the appropriate archive from [Releases](https://github.com/jmeiracorbal/verbose-octo-spork/releases/tag/v0.1.0-beta.1):
+Download the appropriate archive from [Releases](https://github.com/jmeiracorbal/apfsctl/releases/tag/v0.2.0-beta.1):
 
-- Apple Silicon: `devvolume_v0.1.0-beta.1_darwin_arm64.tar.gz`
-- Intel: `devvolume_v0.1.0-beta.1_darwin_amd64.tar.gz`
+- Apple Silicon: `apfsctl_v0.2.0-beta.1_darwin_arm64.tar.gz`
+- Intel: `apfsctl_v0.2.0-beta.1_darwin_amd64.tar.gz`
 
 Extract and install it (Apple Silicon example; replace `arm64` with `amd64` on Intel):
 
 ```sh
-tar -xzf devvolume_v0.1.0-beta.1_darwin_arm64.tar.gz
+tar -xzf apfsctl_v0.2.0-beta.1_darwin_arm64.tar.gz
 mkdir -p "$HOME/.local/bin"
-install -m 0755 devvolume "$HOME/.local/bin/devvolume"
-"$HOME/.local/bin/devvolume" version
+install -m 0755 apfsctl "$HOME/.local/bin/apfsctl"
+"$HOME/.local/bin/apfsctl" version
 ```
 
 Alternatively, build from source:
 
 ```sh
-go build -o devvolume ./cmd/devvolume
+go build -o apfsctl ./cmd/apfsctl
 ```
 
 ## References
 
-Inspired by [`repos-volume.sh` from elithrar/dotfiles](https://github.com/elithrar/dotfiles/blob/main/repos-volume.sh). devvolume is an independent Go implementation.
+Inspired by [`repos-volume.sh` from elithrar/dotfiles](https://github.com/elithrar/dotfiles/blob/main/repos-volume.sh). apfsctl is an independent Go implementation.

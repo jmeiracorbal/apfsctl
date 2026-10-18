@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/system"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/system"
 )
 
 const (

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/reconcile"
 )
 
 func TestRejectsNonEmptyMountPoint(t *testing.T) {

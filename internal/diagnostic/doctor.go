@@ -3,8 +3,8 @@ package diagnostic
 import (
 	"fmt"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/reconcile"
 )
 
 type Finding struct {

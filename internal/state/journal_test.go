@@ -3,7 +3,7 @@ package state
 import (
 	"testing"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
 )
 
 func TestJournalRoundTrip(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
 )
 
 func desired() domain.Desired {

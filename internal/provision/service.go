@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/state"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/reconcile"
+	"github.com/jmeiracorbal/apfsctl/internal/state"
 )
 
 type Platform interface {

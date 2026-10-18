@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/state"
+	"github.com/jmeiracorbal/apfsctl/internal/state"
 )
 
 func TestAmbiguousPreviousCreationCannotRetry(t *testing.T) {

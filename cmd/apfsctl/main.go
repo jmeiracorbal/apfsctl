@@ -13,14 +13,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/apfs"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/diagnostic"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/mount"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/provision"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/state"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/system"
+	"github.com/jmeiracorbal/apfsctl/internal/apfs"
+	"github.com/jmeiracorbal/apfsctl/internal/diagnostic"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/mount"
+	"github.com/jmeiracorbal/apfsctl/internal/provision"
+	"github.com/jmeiracorbal/apfsctl/internal/reconcile"
+	"github.com/jmeiracorbal/apfsctl/internal/state"
+	"github.com/jmeiracorbal/apfsctl/internal/system"
 )
 
 func main() {
@@ -36,19 +36,19 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if len(args) == 0 {
-		return errors.New("usage: devvolume status | plan | doctor | create | mount | configure | unmount | remove")
+		return errors.New("usage: apfsctl status | plan | doctor | create | mount | configure | unmount | remove")
 	}
-	if os.Getenv("DEVVOLUME_VIFS_UUID") != "" {
+	if os.Getenv("APFSCTL_VIFS_UUID") != "" {
 		if len(args) != 1 {
 			return errors.New("fstab editor requires exactly one temporary file")
 		}
 		return mount.EditTemporary(args[0], mount.Entry{
-			UUID: os.Getenv("DEVVOLUME_VIFS_UUID"),
-			Path: os.Getenv("DEVVOLUME_VIFS_PATH"),
+			UUID: os.Getenv("APFSCTL_VIFS_UUID"),
+			Path: os.Getenv("APFSCTL_VIFS_PATH"),
 		})
 	}
 	if runtime.GOOS != "darwin" {
-		return errors.New("devvolume requires macOS (APFS); unit tests support other platforms")
+		return errors.New("apfsctl requires macOS (APFS); unit tests support other platforms")
 	}
 	timeout := 45 * time.Second
 	if args[0] == "create" || args[0] == "mount" || args[0] == "configure" {
@@ -128,8 +128,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 			}
 			svc := provision.Service{
 				Platform:      apfs.Mutator{Read: client, Interactive: system.ExecRunner{}},
-				Journal:       state.FileJournal{Directory: "/private/var/db/devvolume"},
-				Lock:          state.FileLock{Path: "/private/var/db/devvolume/operation.lock"},
+				Journal:       state.FileJournal{Directory: "/private/var/db/apfsctl"},
+				Lock:          state.FileLock{Path: "/private/var/db/apfsctl/operation.lock"},
 				ValidateMount: validateWritableMountTarget,
 			}
 			result, err := svc.Apply(ctx, *desired, args[0] == "create")
