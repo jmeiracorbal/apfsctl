@@ -10,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/apfs"
+	"github.com/jmeiracorbal/verbose-octo-spork/internal/diagnostic"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/system"
@@ -27,7 +29,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: devvolume status | plan [flags] | doctor | create | mount | unmount | remove")
+		return errors.New("usage: devvolume status | plan [flags] | doctor [flags] | create | mount | unmount | remove")
 	}
 	if runtime.GOOS != "darwin" {
 		return errors.New("devvolume requires macOS (APFS); unit tests support other platforms")
@@ -36,7 +38,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	defer cancel()
 	client := apfs.Client{Run: system.ExecRunner{}}
 	switch args[0] {
-	case "status", "doctor":
+	case "status":
 		if len(args) != 1 {
 			return errors.New("unexpected arguments")
 		}
@@ -45,8 +47,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		return printJSON(stdout, s)
-	case "plan":
-		flags := flag.NewFlagSet("plan", flag.ContinueOnError)
+	case "plan", "doctor":
+		flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		flags.SetOutput(stderr)
 		name := flags.String("name", "repos", "APFS volume name")
 		container := flags.String("container", "", "APFS container UUID")
@@ -61,20 +63,40 @@ func run(args []string, stdout, stderr io.Writer) error {
 		if flags.NArg() != 0 {
 			return errors.New("unexpected positional arguments")
 		}
-		d := domain.Desired{Name: *name, ContainerUUID: *container, MountPoint: *mount, Encrypted: true}
-		if err := d.Validate(); err != nil {
-			return err
+		var desired *domain.Desired
+		if args[0] == "plan" || *container != "" {
+			d := domain.Desired{Name: *name, ContainerUUID: *container, MountPoint: *mount, Encrypted: true}
+			if err := d.Validate(); err != nil {
+				return err
+			}
+			desired = &d
 		}
 		s, err := client.Snapshot(ctx)
 		if err != nil {
 			return err
 		}
-		p, err := reconcile.Build(d, s)
+		if args[0] == "doctor" {
+			report := diagnostic.Inspect(s, desired)
+			if report.Plan != nil && !report.Plan.Noop {
+				if err := ensureSafeMountTarget(*mount, *report.Plan); err != nil {
+					report.Healthy = false
+					report.Findings = append(report.Findings, diagnostic.Finding{Code: "mount_target", Message: err.Error()})
+				}
+			}
+			if err := printJSON(stdout, report); err != nil {
+				return err
+			}
+			if !report.Healthy {
+				return errors.New("diagnostics detected configuration drift or conflict")
+			}
+			return nil
+		}
+		p, err := reconcile.Build(*desired, s)
 		if err != nil {
 			return err
 		}
 		if !p.Noop {
-			if err := ensureSafeMountTarget(d.MountPoint, p); err != nil {
+			if err := ensureSafeMountTarget(p.Desired.MountPoint, p); err != nil {
 				return err
 			}
 		}
@@ -86,6 +108,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 }
 
+// ensureSafeMountTarget checks directory ownership of the path, not APFS state.
+// This is a read-only safety check, invoked only if the planned operation mounts.
 func ensureSafeMountTarget(path string, p reconcile.Plan) error {
 	needsMount := false
 	for _, change := range p.Changes {
@@ -96,15 +120,39 @@ func ensureSafeMountTarget(path string, p reconcile.Plan) error {
 	if !needsMount {
 		return nil
 	}
-	info, err := os.Lstat(path)
+	for current := path; current != "/"; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("mount path contains symlink %q", current)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("mount path component %q is not a directory", current)
+		}
+	}
+	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return errors.New("mount point exists but is not a real directory")
+	parent, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	dirStat, dirOK := info.Sys().(*syscall.Stat_t)
+	parentStat, parentOK := parent.Sys().(*syscall.Stat_t)
+	if !dirOK || !parentOK {
+		return errors.New("cannot verify mount point filesystem")
+	}
+	if dirStat.Dev != parentStat.Dev {
+		return fmt.Errorf("mount point %q is already a filesystem mount", path)
 	}
 	entries, err := os.ReadDir(path)
 	if err != nil {

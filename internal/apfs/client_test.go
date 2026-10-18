@@ -18,7 +18,7 @@ func (f *fakeRunner) Run(_ context.Context, exe string, stdin []byte, args ...st
 		return stdin, nil
 	}
 	if strings.Contains(strings.Join(args, " "), "apfs list") {
-		return []byte(`{"Containers":[{"APFSContainerUUID":"CONT","Volumes":[{"Name":"repos","APFSVolumeUUID":"VOL","DeviceIdentifier":"disk2s5","Encryption":true,"FileVault":false,"Locked":false}]}]}`), nil
+		return []byte(`{"Containers":[{"APFSContainerUUID":"CONT","ContainerReference":"disk2","CapacityFree":524288,"Volumes":[{"Name":"repos","APFSVolumeUUID":"VOL","DeviceIdentifier":"disk2s5","Encryption":true,"Locked":false,"Roles":[]}]}]}`), nil
 	}
 	if f.bad {
 		return nil, fmt.Errorf("disk failure")
@@ -31,6 +31,9 @@ func TestSnapshotStructuredData(t *testing.T) {
 	s, err := (Client{Run: f}).Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(s.Containers) != 1 || s.Containers[0].Reference != "disk2" {
+		t.Fatalf("invalid container: %+v", s)
 	}
 	if len(s.Volumes) != 1 || !s.Volumes[0].Encrypted || s.Volumes[0].MountPoint != "/Users/test/repos" {
 		t.Fatalf("snapshot: %+v", s)

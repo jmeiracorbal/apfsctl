@@ -26,9 +26,8 @@ type Plan struct {
 	Noop    bool           `json:"noop"`
 }
 
-// Build is pure. It fails closed on uncertain ownership or mismatching state.
-// It covers encrypted APFS volume presence and mount state only; system policies
-// (Spotlight, FSEvents, fstab) will be reconciled in subsequent milestones.
+// Build is pure and plans only APFS encryption and mounting. It does not
+// evaluate /etc/fstab, Spotlight, FSEvents or backup configuration.
 func Build(d domain.Desired, s domain.Snapshot) (Plan, error) {
 	if err := d.Validate(); err != nil {
 		return Plan{}, err
@@ -39,8 +38,9 @@ func Build(d domain.Desired, s domain.Snapshot) (Plan, error) {
 
 	containerPresent := false
 	for _, c := range s.Containers {
-		if strings.EqualFold(c, d.ContainerUUID) {
+		if strings.EqualFold(c.UUID, d.ContainerUUID) {
 			containerPresent = true
+			break
 		}
 	}
 	if !containerPresent {
@@ -50,6 +50,9 @@ func Build(d domain.Desired, s domain.Snapshot) (Plan, error) {
 	var found *domain.Volume
 	for i := range s.Volumes {
 		v := &s.Volumes[i]
+		if v.MountPoint == d.MountPoint && v.Name != d.Name {
+			return Plan{}, fmt.Errorf("mount point %q is occupied by volume %q", d.MountPoint, v.Name)
+		}
 		if v.Name != d.Name {
 			continue
 		}
@@ -58,26 +61,18 @@ func Build(d domain.Desired, s domain.Snapshot) (Plan, error) {
 		}
 		found = v
 	}
-
-	for _, v := range s.Volumes {
-		if v.MountPoint == d.MountPoint && !(v.Name == d.Name && strings.EqualFold(v.ContainerUUID, d.ContainerUUID)) {
-			if v.Name == d.Name {
-				return Plan{}, fmt.Errorf("volume %q exists in a different APFS container", d.Name)
-			}
-			return Plan{}, fmt.Errorf("mount point %q is occupied by volume %q", d.MountPoint, v.Name)
-		}
-	}
-
-	plan := Plan{Desired: d, Changes: []Change{}}
+	p := Plan{Desired: d, Changes: []Change{}}
 	if found == nil {
-		plan.Changes = append(plan.Changes,
-			Change{CreateEncrypted, "volume is absent"},
-			Change{Mount, "new volume must be mounted"},
-		)
-		return plan, nil
+		p.Changes = append(p.Changes,
+			Change{Action: CreateEncrypted, Reason: "volume is absent"},
+			Change{Action: Mount, Reason: "new volume must be mounted"})
+		return p, nil
 	}
 	if !strings.EqualFold(found.ContainerUUID, d.ContainerUUID) {
 		return Plan{}, fmt.Errorf("volume %q exists in a different APFS container", d.Name)
+	}
+	if len(found.Roles) > 0 {
+		return Plan{}, fmt.Errorf("volume %q has reserved APFS roles %v", d.Name, found.Roles)
 	}
 	if !found.Encrypted {
 		return Plan{}, fmt.Errorf("volume %q exists without required APFS encryption", d.Name)
@@ -86,15 +81,12 @@ func Build(d domain.Desired, s domain.Snapshot) (Plan, error) {
 		return Plan{}, fmt.Errorf("volume %q is already mounted at %q", d.Name, found.MountPoint)
 	}
 	if found.MountPoint == d.MountPoint {
-		if found.Locked {
-			return Plan{}, fmt.Errorf("inconsistent state: volume %q is mounted and locked", d.Name)
-		}
-		plan.Noop = true
-		return plan, nil
+		p.Noop = true
+		return p, nil
 	}
 	if found.Locked {
-		plan.Changes = append(plan.Changes, Change{Unlock, "encrypted volume is locked"})
+		p.Changes = append(p.Changes, Change{Action: Unlock, Reason: "encrypted volume is locked"})
 	}
-	plan.Changes = append(plan.Changes, Change{Mount, "volume is not mounted at requested path"})
-	return plan, nil
+	p.Changes = append(p.Changes, Change{Action: Mount, Reason: "volume is not mounted at requested path"})
+	return p, nil
 }

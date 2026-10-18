@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/system"
@@ -18,21 +17,24 @@ const (
 
 type Client struct{ Run system.Runner }
 
-// Snapshot reads structured macOS information; failure to read any part is fatal.
+// Snapshot always reads the live state. No local marker can substitute for
+// the observed APFS UUID, encryption state or active mount point.
 func (c Client) Snapshot(ctx context.Context) (domain.Snapshot, error) {
 	if c.Run == nil {
 		return domain.Snapshot{}, errors.New("missing command runner")
 	}
 	var listing struct {
 		Containers []struct {
-			UUID    string `json:"APFSContainerUUID"`
-			Volumes []struct {
-				Name       string `json:"Name"`
-				UUID       string `json:"APFSVolumeUUID"`
-				Device     string `json:"DeviceIdentifier"`
-				Encryption *bool  `json:"Encryption"`
-				FileVault  *bool  `json:"FileVault"`
-				Locked     *bool  `json:"Locked"`
+			UUID      string `json:"APFSContainerUUID"`
+			Reference string `json:"ContainerReference"`
+			FreeBytes uint64 `json:"CapacityFree"`
+			Volumes   []struct {
+				Name       string   `json:"Name"`
+				UUID       string   `json:"APFSVolumeUUID"`
+				Device     string   `json:"DeviceIdentifier"`
+				Encryption *bool    `json:"Encryption"`
+				Locked     *bool    `json:"Locked"`
+				Roles      []string `json:"Roles"`
 			} `json:"Volumes"`
 		} `json:"Containers"`
 	}
@@ -42,18 +44,14 @@ func (c Client) Snapshot(ctx context.Context) (domain.Snapshot, error) {
 	if len(listing.Containers) == 0 {
 		return domain.Snapshot{}, errors.New("no APFS containers discovered")
 	}
-	s := domain.Snapshot{Containers: []string{}, Volumes: []domain.Volume{}}
-	for _, container := range listing.Containers {
-		if container.UUID == "" {
-			return domain.Snapshot{}, errors.New("APFS container without UUID")
-		}
-		s.Containers = append(s.Containers, container.UUID)
-		for _, v := range container.Volumes {
-			if v.Encryption == nil || v.FileVault == nil || v.Locked == nil {
-				return domain.Snapshot{}, fmt.Errorf("encryption state unavailable for volume %q", v.Name)
-			}
-			if !strings.HasPrefix(v.Device, "disk") {
-				return domain.Snapshot{}, fmt.Errorf("invalid APFS device identifier %q", v.Device)
+	s := domain.Snapshot{Containers: []domain.Container{}, Volumes: []domain.Volume{}}
+	for _, c := range listing.Containers {
+		s.Containers = append(s.Containers, domain.Container{
+			UUID: c.UUID, Reference: c.Reference, FreeBytes: c.FreeBytes,
+		})
+		for _, v := range c.Volumes {
+			if v.Encryption == nil || v.Locked == nil {
+				return domain.Snapshot{}, fmt.Errorf("encryption/lock state unavailable for volume %q", v.Name)
 			}
 			var info struct {
 				MountPoint string `json:"MountPoint"`
@@ -62,9 +60,9 @@ func (c Client) Snapshot(ctx context.Context) (domain.Snapshot, error) {
 				return domain.Snapshot{}, fmt.Errorf("inspect %s: %w", v.Device, err)
 			}
 			s.Volumes = append(s.Volumes, domain.Volume{
-				Name: v.Name, UUID: v.UUID, ContainerUUID: container.UUID,
-				Device: v.Device, Encrypted: *v.Encryption,
-				Locked: *v.Locked, MountPoint: info.MountPoint,
+				Name: v.Name, UUID: v.UUID, ContainerUUID: c.UUID,
+				Device: v.Device, Encrypted: *v.Encryption, Locked: *v.Locked,
+				MountPoint: info.MountPoint, Roles: v.Roles,
 			})
 		}
 	}
@@ -78,6 +76,9 @@ func (c Client) readPlist(ctx context.Context, out any, executable string, args 
 	plist, err := c.Run.Run(ctx, executable, nil, args...)
 	if err != nil {
 		return fmt.Errorf("read APFS plist: %w", err)
+	}
+	if len(plist) == 0 {
+		return errors.New("empty APFS plist response")
 	}
 	data, err := c.Run.Run(ctx, plutil, plist, "-convert", "json", "-o", "-", "-")
 	if err != nil {

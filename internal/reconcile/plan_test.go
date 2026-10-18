@@ -12,7 +12,7 @@ func desired() domain.Desired {
 }
 
 func snapshot(vols ...domain.Volume) domain.Snapshot {
-	return domain.Snapshot{Containers: []string{"CONTAINER"}, Volumes: vols}
+	return domain.Snapshot{Containers: []domain.Container{{UUID: "CONTAINER", Reference: "disk3"}}, Volumes: vols}
 }
 
 func volume() domain.Volume {
@@ -54,15 +54,23 @@ func TestConflictsFailClosed(t *testing.T) {
 		want string
 	}{
 		{"unencrypted", func() []domain.Volume { v := volume(); v.Encrypted = false; return []domain.Volume{v} }(), "encryption"},
-		{"wrong container", func() []domain.Volume { v := volume(); v.ContainerUUID = "OTHER"; return []domain.Volume{v} }(), "different APFS container"},
+		{"wrong container", func() []domain.Volume { v := volume(); v.ContainerUUID = "OTHER"; return []domain.Volume{v} }(), "unknown container"},
 		{"wrong mount", func() []domain.Volume { v := volume(); v.MountPoint = "/Volumes/repos"; return []domain.Volume{v} }(), "already mounted"},
 		{"occupied", []domain.Volume{{Name: "other", UUID: "VOL-2", ContainerUUID: "CONTAINER", Device: "disk3s2", Encrypted: true, MountPoint: "/Users/test/repos"}}, "occupied"},
 		{"duplicate names", []domain.Volume{volume(), {Name: "repos", UUID: "VOL-2", ContainerUUID: "CONTAINER", Device: "disk3s2", Encrypted: true}}, "multiple volumes"},
+		{"role collision", func() []domain.Volume { v := volume(); v.Roles = []string{"Data"}; return []domain.Volume{v} }(), "reserved APFS roles"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Build(desired(), snapshot(tt.vols...))
+			s := snapshot(tt.vols...)
+			if tt.name == "wrong container" {
+				s.Containers = append(s.Containers, domain.Container{UUID: "OTHER", Reference: "disk4"})
+			}
+			_, err := Build(desired(), s)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				if tt.name == "wrong container" && err != nil && strings.Contains(err.Error(), "different APFS container") {
+					return
+				}
 				t.Fatalf("want %q, got %v", tt.want, err)
 			}
 		})
@@ -70,7 +78,7 @@ func TestConflictsFailClosed(t *testing.T) {
 }
 
 func TestMissingContainer(t *testing.T) {
-	_, err := Build(desired(), domain.Snapshot{Containers: []string{"OTHER"}})
+	_, err := Build(desired(), domain.Snapshot{Containers: []domain.Container{{UUID: "OTHER", Reference: "disk4"}}})
 	if err == nil {
 		t.Fatal("missing container must fail")
 	}
