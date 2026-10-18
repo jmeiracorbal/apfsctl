@@ -73,6 +73,23 @@ No se adoptan volúmenes con roles de sistema; los conflictos de nombres, UUID, 
 
 No se ejecutan scripts Bash, `sh -c` ni comandos construidos concatenando argumentos. Todas las modificaciones usan una llamada a una utilidad nativa con lista explícita de argumentos.
 
+
+## Paso 4: políticas del sistema (experimental)
+
+El comando `configure` solo acepta un volumen APFS cifrado que ya esté montado exactamente en la ruta indicada y cuya identidad UUID se confirme antes de cada cambio:
+
+```sh
+# Se usa la ruta real del directorio y el UID del usuario, no el de root.
+sudo ./devvolume configure --container <APFS-container-UUID> --name repos --mount /Users/usuario/repos --uid 501 --spotlight off --fsevents keep
+```
+
+- `fstab`: entrada UUID que conserva las demás líneas. La herramienta invoca `/usr/sbin/vifs` y utiliza el mismo binario Go como editor nativo; no genera scripts Bash. Si la entrada coincide exactamente, no edita el archivo.
+- Spotlight: `mdutil -s` comprueba el estado antes de usar `mdutil -i off`. Un resultado de estado desconocido detiene el comando sin asumir éxito.
+- FSEvents: `--fsevents keep` no modifica el historial ni sus marcadores. `--fsevents disable` añade explícitamente `.fseventsd/no_log`; puede afectar a las copias incrementales y no es reversible automáticamente.
+- Permisos: `--uid 501` ajusta solo el propietario de la raíz del volumen, nunca recursivamente; `--uid -1` (valor por defecto) preserva los permisos actuales.
+
+Repetir el comando cuando las políticas ya coinciden devuelve `noop: true`. La edición de `fstab` persiste **la ruta de montaje**, pero **no desbloquea automáticamente un APFS cifrado al reiniciar**; debe desbloquearse con `mount` u otro mecanismo autorizado. Esta implementación necesita pruebas de integración con `vifs` y reinicios reales de macOS antes de considerarse estable. No se presupone una cadena de montaje automático.
+
 ## Limitaciones importantes
 
 El cifrado y el montaje APFS se reconcilian en el paso 3; **la configuración completa del sistema no**. El resultado `noop` no comprueba aún `fstab`, Spotlight, FSEvents, propiedad del directorio raíz del nuevo volumen ni política de copias de seguridad. La gestión de esas políticas pertenece al paso 4.

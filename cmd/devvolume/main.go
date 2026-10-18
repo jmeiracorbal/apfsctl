@@ -16,6 +16,7 @@ import (
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/apfs"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/diagnostic"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
+	"github.com/jmeiracorbal/verbose-octo-spork/internal/mount"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/provision"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/state"
@@ -31,19 +32,30 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: devvolume status | plan [flags] | doctor [flags] | create | mount | unmount | remove")
+		return errors.New("usage: devvolume status | plan | doctor | create | mount | configure | unmount | remove")
+	}
+	if os.Getenv("DEVVOLUME_VIFS_UUID") != "" {
+		if len(args) != 1 {
+			return errors.New("fstab editor requires exactly one temporary file")
+		}
+		return mount.EditTemporary(args[0], mount.Entry{
+			UUID: os.Getenv("DEVVOLUME_VIFS_UUID"),
+			Path: os.Getenv("DEVVOLUME_VIFS_PATH"),
+		})
 	}
 	if runtime.GOOS != "darwin" {
 		return errors.New("devvolume requires macOS (APFS); unit tests support other platforms")
 	}
 	timeout := 45 * time.Second
-	if args[0] == "create" || args[0] == "mount" {
+	if args[0] == "create" || args[0] == "mount" || args[0] == "configure" {
 		timeout = 10 * time.Minute
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	client := apfs.Client{Run: system.ExecRunner{}}
 	switch args[0] {
+	case "configure":
+		return runConfigure(ctx, args[1:], client, stdout, stderr)
 	case "status":
 		if len(args) != 1 {
 			return errors.New("unexpected arguments")
