@@ -45,11 +45,11 @@ func (c Client) Snapshot(ctx context.Context) (domain.Snapshot, error) {
 		return domain.Snapshot{}, errors.New("no APFS containers discovered")
 	}
 	s := domain.Snapshot{Containers: []domain.Container{}, Volumes: []domain.Volume{}}
-	for _, c := range listing.Containers {
+	for _, container := range listing.Containers {
 		s.Containers = append(s.Containers, domain.Container{
-			UUID: c.UUID, Reference: c.Reference, FreeBytes: c.FreeBytes,
+			UUID: container.UUID, Reference: container.Reference, FreeBytes: container.FreeBytes,
 		})
-		for _, v := range c.Volumes {
+		for _, v := range container.Volumes {
 			if v.Encryption == nil || v.Locked == nil {
 				return domain.Snapshot{}, fmt.Errorf("encryption/lock state unavailable for volume %q", v.Name)
 			}
@@ -60,7 +60,7 @@ func (c Client) Snapshot(ctx context.Context) (domain.Snapshot, error) {
 				return domain.Snapshot{}, fmt.Errorf("inspect %s: %w", v.Device, err)
 			}
 			s.Volumes = append(s.Volumes, domain.Volume{
-				Name: v.Name, UUID: v.UUID, ContainerUUID: c.UUID,
+				Name: v.Name, UUID: v.UUID, ContainerUUID: container.UUID,
 				Device: v.Device, Encrypted: *v.Encryption, Locked: *v.Locked,
 				MountPoint: info.MountPoint, Roles: v.Roles,
 			})
