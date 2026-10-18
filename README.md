@@ -1,13 +1,20 @@
 # devvolume
 
-CLI Go declarativa para diagnosticar y, en futuros hitos, gestionar volúmenes APFS dedicados a repositorios en macOS.
+CLI Go para gestionar volúmenes APFS cifrados para repositorios de desarrollo en macOS, con reconciliación idempotente y comprobaciones explícitas del estado real.
 
-**Estado: lectura y planificación.** Ningún comando modifica el almacenamiento. Las operaciones privilegiadas están deshabilitadas explícitamente.
+## Estado
+
+**Hito 3: aprovisionamiento experimental.** Están implementados el descubrimiento, el diagnóstico y los comandos `create` y `mount`. Todavía **no se ha validado el aprovisionamiento contra APFS real** en un Mac. Se recomienda probarlo primero en un contenedor APFS de pruebas con copia de seguridad.
+
+No están implementados el montaje persistente (`fstab`), las políticas de Spotlight/FSEvents, ni los comandos `unmount` y `remove`. La titularidad de archivos del nuevo volumen tampoco se modifica automáticamente.
 
 ## Requisitos
 
 - macOS con `diskutil` y `plutil`.
-- Go 1.22 o posterior.
+- Go 1.22 o superior.
+- Permisos de administrador para operaciones de escritura.
+- Terminal interactivo para las frases de acceso.
+- Un directorio de montaje **ya existente, vacío y sin enlaces simbólicos**.
 
 ```sh
 go test ./...
@@ -16,33 +23,58 @@ go build -o devvolume ./cmd/devvolume
 
 ./devvolume status
 ./devvolume doctor
-./devvolume doctor --container <UUID-del-contenedor> --name repos --mount "$HOME/repos"
-./devvolume plan --container <UUID-del-contenedor> --name repos --mount "$HOME/repos"
+./devvolume plan --container <APFS-container-UUID> --name repos --mount "$HOME/repos"
 ```
 
-`status` devuelve contenedores y volúmenes APFS, incluidos UUID, referencia del contenedor (`diskN`), cifrado, roles y montaje. `doctor` realiza diagnósticos estructurados. Si se indica `--container`, además compara el estado observado con la configuración deseada; una desviación o conflicto termina con código distinto de cero. `plan` muestra los cambios necesarios sin ejecutarlos.
+El UUID del contenedor se consulta mediante `status`, no se calcula a partir del identificador `diskN`.
 
-La salida de `diskutil` se lee como plist mediante `plutil` y se procesa como JSON tipado. No se usa Bash, `sh -c` ni scripts generados.
+## Crear o recuperar el volumen
 
-## Idempotencia
+Preparar previamente el directorio como usuario normal:
 
-`internal/reconcile.Build` es un planificador puro. Un volumen existente, cifrado y montado exactamente en la ruta solicitada produce `noop: true` con `changes: []`. Si existe pero está bloqueado, planifica desbloqueo y montaje sin volver a crearlo. Si no existe, planifica creación cifrada y montaje. Cualquier observación ambigua, cifrado ausente, colisión de nombre o montaje en conflicto aborta sin aplicar cambios.
+```sh
+mkdir -p "$HOME/repos"
+```
 
-La validación usa identidad del contenedor APFS por UUID y su referencia real; nunca infiere referencias de disco. Los volúmenes de sistema con roles APFS están protegidos frente a adopción accidental. Antes de planificar un montaje, la CLI comprueba que el directorio esté vacío y que la ruta no atraviese enlaces simbólicos.
+Consultar el plan y verificar el UUID del contenedor **antes de escribir**. A continuación:
 
-## Organización
+```sh
+sudo ./devvolume create --container <APFS-container-UUID> --name repos --mount "$HOME/repos"
+```
 
-- `cmd/devvolume`: CLI y comprobaciones del directorio de montaje.
-- `internal/domain`: configuración deseada y snapshot APFS tipado.
-- `internal/reconcile`: motor de idempotencia y conflictos.
-- `internal/diagnostic`: informe de salud y desviaciones.
-- `internal/apfs`: lectura de datos reales desde `diskutil`.
-- `internal/system`: ejecución de comandos nativos mediante vectores de argumentos.
+`create` **no duplica** un volumen existente compatible. Si falta, solicita la clave de cifrado mediante el diálogo interactivo de `diskutil` (`-passprompt`), crea el volumen APFS ya cifrado y verifica el resultado. Si existe y está bloqueado, solicita la clave al desbloquearlo. Los secretos nunca se transmiten como argumentos de línea de comandos, ni se guardan en el diario del programa.
 
-## Seguridad y limitaciones
+El comando `mount` aplica solamente el desbloqueo/montaje de un volumen ya existente:
 
-Los comandos `create`, `mount`, `unmount` y `remove` todavía devuelven un error deliberado. El estado `noop` **solo verifica cifrado y montaje APFS**, no la configuración completa del sistema.
+```sh
+sudo ./devvolume mount --container <APFS-container-UUID> --name repos --mount "$HOME/repos"
+```
 
-**Pendiente:** cifrado y creación de volúmenes reales, desbloqueo, gestión persistente de `fstab`, políticas de Spotlight y FSEvents, reconciliación de esas políticas, copia de seguridad, rollback y operaciones destructivas seguras. Nada de ello se considera implementado por las pruebas actuales.
+El punto de montaje se debe indicar explícitamente al ejecutar con `sudo`, para no depender del directorio personal de `root`.
 
-El diagnóstico no sustituye las pruebas de integración en hardware macOS real. No almacenar contraseñas en argumentos, registros ni archivos de estado.
+## Idempotencia y recuperación
+
+El estado efectivo de APFS tiene prioridad sobre cualquier indicador local. Si nombre, contenedor, cifrado y montaje coinciden, la CLI devuelve `noop: true` **sin escribir ni solicitar privilegios**. Antes de cada mutación, el plan se recalcula bajo un bloqueo exclusivo y se valida otra vez el directorio; después se comprueba su efecto con una nueva lectura de APFS.
+
+Se guarda un diario transaccional, sin contraseñas, en `/private/var/db/devvolume`, dentro de un directorio privado propiedad de `root`. Cada operación se registra y se verifica. Si la creación quedó interrumpida y no se puede determinar su resultado, el comando se detiene para inspección manual: **nunca reintenta una creación ambigua**. No realiza rollback destructivo.
+
+No se adoptan volúmenes con roles de sistema; los conflictos de nombres, UUID, cifrado o punto de montaje detienen la operación.
+
+## Arquitectura
+
+- `cmd/devvolume`: CLI y comprobaciones de rutas.
+- `internal/domain`: modelos, validación e identidades.
+- `internal/reconcile`: cálculo puro de cambios (sin efectos secundarios).
+- `internal/diagnostic`: diagnósticos y detección de drift.
+- `internal/apfs`: adaptador estructurado para `diskutil`.
+- `internal/provision`: orquestación y verificación de operaciones.
+- `internal/state`: diario atómico y bloqueo entre procesos.
+- `internal/system`: ejecución de comandos sin intérprete de shell.
+
+No se ejecutan scripts Bash, `sh -c` ni comandos construidos concatenando argumentos. Todas las modificaciones usan una llamada a una utilidad nativa con lista explícita de argumentos.
+
+## Limitaciones importantes
+
+El cifrado y el montaje APFS se reconcilian en el paso 3; **la configuración completa del sistema no**. El resultado `noop` no comprueba aún `fstab`, Spotlight, FSEvents, propiedad del directorio raíz del nuevo volumen ni política de copias de seguridad. La gestión de esas políticas pertenece al paso 4.
+
+**No ejecutar en datos importantes sin revisar la salida de `plan` y disponer de una copia de seguridad.**

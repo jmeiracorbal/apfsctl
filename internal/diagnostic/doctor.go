@@ -13,10 +13,10 @@ type Finding struct {
 }
 
 type Report struct {
-	Healthy   bool            `json:"healthy"`
-	Findings  []Finding       `json:"findings"`
-	Plan      *reconcile.Plan `json:"plan,omitempty"`
-	Checked   string          `json:"checked"`
+	Healthy  bool            `json:"healthy"`
+	Findings []Finding       `json:"findings"`
+	Plan     *reconcile.Plan `json:"plan,omitempty"`
+	Checked  string          `json:"checked"`
 }
 
 // Inspect checks the observed APFS invariants. With a desired configuration,

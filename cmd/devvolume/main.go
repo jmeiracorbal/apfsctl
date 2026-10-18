@@ -16,7 +16,9 @@ import (
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/apfs"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/diagnostic"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
+	"github.com/jmeiracorbal/verbose-octo-spork/internal/provision"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
+	"github.com/jmeiracorbal/verbose-octo-spork/internal/state"
 	"github.com/jmeiracorbal/verbose-octo-spork/internal/system"
 )
 
@@ -34,7 +36,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("devvolume requires macOS (APFS); unit tests support other platforms")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	timeout := 45 * time.Second
+	if args[0] == "create" || args[0] == "mount" {
+		timeout = 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	client := apfs.Client{Run: system.ExecRunner{}}
 	switch args[0] {
@@ -47,7 +53,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		return printJSON(stdout, s)
-	case "plan", "doctor":
+	case "plan", "doctor", "create", "mount":
 		flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		flags.SetOutput(stderr)
 		name := flags.String("name", "repos", "APFS volume name")
@@ -64,7 +70,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 			return errors.New("unexpected positional arguments")
 		}
 		var desired *domain.Desired
-		if args[0] == "plan" || *container != "" {
+		if args[0] == "plan" || args[0] == "create" || args[0] == "mount" || *container != "" {
 			d := domain.Desired{Name: *name, ContainerUUID: *container, MountPoint: *mount, Encrypted: true}
 			if err := d.Validate(); err != nil {
 				return err
@@ -100,8 +106,24 @@ func run(args []string, stdout, stderr io.Writer) error {
 				return err
 			}
 		}
+		if args[0] == "create" || args[0] == "mount" {
+			if !p.Noop && os.Geteuid() != 0 {
+				return errors.New("APFS mutation requires root; run with sudo and an explicit --mount path")
+			}
+			svc := provision.Service{
+				Platform:      apfs.Mutator{Read: client, Interactive: system.ExecRunner{}},
+				Journal:       state.FileJournal{Directory: "/private/var/db/devvolume"},
+				Lock:          state.FileLock{Path: "/private/var/db/devvolume/operation.lock"},
+				ValidateMount: validateWritableMountTarget,
+			}
+			result, err := svc.Apply(ctx, *desired, args[0] == "create")
+			if err != nil {
+				return err
+			}
+			return printJSON(stdout, result)
+		}
 		return printJSON(stdout, p)
-	case "create", "mount", "unmount", "remove":
+	case "unmount", "remove":
 		return fmt.Errorf("%s is not implemented: privileged mutations are disabled in this skeleton", args[0])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
@@ -160,6 +182,26 @@ func ensureSafeMountTarget(path string, p reconcile.Plan) error {
 	}
 	if len(entries) > 0 {
 		return fmt.Errorf("mount point %q is not empty; refusing to hide existing files", path)
+	}
+	return nil
+}
+
+// Mutations require the caller to prepare an existing empty directory.
+// Automatically making it as root could silently break ownership in ~/repos.
+func validateWritableMountTarget(path string) error {
+	plan := reconcile.Plan{Changes: []reconcile.Change{{Action: reconcile.Mount}}}
+	if err := ensureSafeMountTarget(path, plan); err != nil {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("create empty mount directory %q before provisioning", path)
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("mount point is not a directory")
 	}
 	return nil
 }
