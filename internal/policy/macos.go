@@ -9,8 +9,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/mount"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/system"
+	"github.com/jmeiracorbal/apfsctl/internal/mount"
+	"github.com/jmeiracorbal/apfsctl/internal/system"
 )
 
 type MacOS struct{ Run system.Runner }

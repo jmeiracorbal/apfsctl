@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
 )
 
 type Entry struct {

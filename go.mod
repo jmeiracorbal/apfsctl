@@ -1,3 +1,3 @@
-module github.com/jmeiracorbal/verbose-octo-spork
+module github.com/jmeiracorbal/apfsctl
 
 go 1.22

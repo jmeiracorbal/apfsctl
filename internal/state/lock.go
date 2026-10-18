@@ -39,7 +39,7 @@ func (l FileLock) Acquire() (func() error, error) {
 	}
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		file.Close()
-		return nil, fmt.Errorf("another devvolume operation is running: %w", err)
+		return nil, fmt.Errorf("another apfsctl operation is running: %w", err)
 	}
 	return func() error {
 		err := syscall.Flock(int(file.Fd()), syscall.LOCK_UN)

@@ -43,7 +43,7 @@ func Ensure(ctx context.Context, e Entry) (bool, error) {
 	}
 	cmd := exec.CommandContext(ctx, "/usr/sbin/vifs")
 	cmd.Env = append(os.Environ(), "EDITOR="+executable, "VISUAL="+executable,
-		"DEVVOLUME_VIFS_UUID="+e.UUID, "DEVVOLUME_VIFS_PATH="+e.Path)
+		"APFSCTL_VIFS_UUID="+e.UUID, "APFSCTL_VIFS_PATH="+e.Path)
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output

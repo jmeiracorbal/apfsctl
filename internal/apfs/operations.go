@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/system"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/system"
 )
 
 // Interactive must be explicitly supplied to enable mutations.
@@ -27,7 +27,7 @@ func (m Mutator) CreateEncrypted(ctx context.Context, container domain.Container
 		return err
 	}
 	// APFS is encrypted atomically from creation; -nomount avoids surprising mounts.
-	// The passphrase is prompted by diskutil, never held by devvolume.
+	// The passphrase is prompted by diskutil, never held by apfsctl.
 	if err := m.Interactive.RunInteractive(ctx, diskutil, "apfs", "addVolume", container.Reference,
 		"APFS", name, "-passprompt", "-nomount"); err != nil {
 		return fmt.Errorf("create encrypted APFS volume: %w", err)

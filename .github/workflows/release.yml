@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: devvolume-v0.1.0-beta.1
+  group: apfsctl-v0.2.0-beta.1
   cancel-in-progress: false
 
 jobs:
@@ -28,37 +28,47 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: Test
+      - name: Test and audit migration
         run: |
           go test -race ./...
           go vet ./...
           test -z "$(gofmt -l cmd internal)"
-      - name: Build and publish beta
+          test "$(go list -m)" = "github.com/jmeiracorbal/apfsctl"
+          test -d cmd/apfsctl
+      - name: Build and release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v0.1.0-beta.1
-        shell: bash
+          TAG: v0.2.0-beta.1
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; skipping."
-            exit 0
-          fi
           mkdir -p dist
           for arch in arm64 amd64; do
             mkdir -p "dist/$arch"
             CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -trimpath \
               -ldflags "-s -w -X main.version=$TAG" \
-              -o "dist/$arch/devvolume" ./cmd/devvolume
-            archive="devvolume_${TAG}_darwin_${arch}.tar.gz"
-            tar -czf "dist/$archive" -C "dist/$arch" devvolume
+              -o "dist/$arch/apfsctl" ./cmd/apfsctl
+            archive="apfsctl_${TAG}_darwin_${arch}.tar.gz"
+            tar -czf "dist/$archive" -C "dist/$arch" apfsctl
           done
           (
             cd dist
             shasum -a 256 ./*.tar.gz > checksums.txt
           )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already published; not republishing."
+            exit 0
+          fi
           gh release create "$TAG" dist/*.tar.gz dist/checksums.txt \
             --target "$GITHUB_SHA" \
-            --title "devvolume $TAG" \
-            --notes-file .github/release-notes/v0.1.0-beta.1.md \
+            --title "apfsctl $TAG" \
+            --notes-file .github/release-notes/v0.2.0-beta.1.md \
             --prerelease
+      - name: Remove obsolete beta release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view v0.2.0-beta.1
+          if gh release view v0.1.0-beta.1 >/dev/null 2>&1; then
+            gh release delete v0.1.0-beta.1 --yes --cleanup-tag
+          fi

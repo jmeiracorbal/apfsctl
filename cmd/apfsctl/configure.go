@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/apfs"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/domain"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/policy"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/reconcile"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/state"
-	"github.com/jmeiracorbal/verbose-octo-spork/internal/system"
+	"github.com/jmeiracorbal/apfsctl/internal/apfs"
+	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/policy"
+	"github.com/jmeiracorbal/apfsctl/internal/reconcile"
+	"github.com/jmeiracorbal/apfsctl/internal/state"
+	"github.com/jmeiracorbal/apfsctl/internal/system"
 )
 
 func runConfigure(ctx context.Context, args []string, client apfs.Client, output, stderr io.Writer) error {
@@ -90,7 +90,7 @@ func runConfigure(ctx context.Context, args []string, client apfs.Client, output
 	}
 	service := policy.Service{
 		Platform:    policy.MacOS{Run: system.ExecRunner{}},
-		Lock:        state.FileLock{Path: "/private/var/db/devvolume/operation.lock"},
+		Lock:        state.FileLock{Path: "/private/var/db/apfsctl/operation.lock"},
 		VerifyMount: verify,
 	}
 	result, err := service.Apply(ctx, policy.Desired{
