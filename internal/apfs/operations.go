@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/mount"
 	"github.com/jmeiracorbal/apfsctl/internal/system"
 )
 
@@ -35,13 +36,13 @@ func (m Mutator) CreateEncrypted(ctx context.Context, container domain.Container
 	return nil
 }
 
-func (m Mutator) Unlock(ctx context.Context, volume domain.Volume, mountPoint string) error {
+func (m Mutator) Unlock(ctx context.Context, volume domain.Volume) error {
 	if m.Interactive == nil {
 		return errors.New("interactive APFS runner not configured")
 	}
 	// Omitting -passphrase causes diskutil to prompt safely on the terminal.
 	if err := m.Interactive.RunInteractive(ctx, diskutil, "apfs", "unlockVolume",
-		volume.Device, "-mountpoint", mountPoint); err != nil {
+		volume.Device, "-nomount"); err != nil {
 		return fmt.Errorf("unlock APFS volume: %w", err)
 	}
 	return nil
@@ -51,7 +52,8 @@ func (m Mutator) Mount(ctx context.Context, volume domain.Volume, mountPoint str
 	if m.Read.Run == nil {
 		return errors.New("APFS runner not configured")
 	}
-	_, err := m.Read.Run.Run(ctx, diskutil, nil, "mount", "-mountPoint", mountPoint, volume.Device)
+	_, err := m.Read.Run.Run(ctx, diskutil, nil, "mount", "nobrowse", "-mountOptions", mount.DiskutilOptions,
+		"-mountPoint", mountPoint, volume.Device)
 	if err != nil {
 		return fmt.Errorf("mount APFS volume: %w", err)
 	}

@@ -14,7 +14,7 @@ import (
 type Platform interface {
 	Snapshot(context.Context) (domain.Snapshot, error)
 	CreateEncrypted(context.Context, domain.Container, string) error
-	Unlock(context.Context, domain.Volume, string) error
+	Unlock(context.Context, domain.Volume) error
 	Mount(context.Context, domain.Volume, string) error
 }
 
@@ -163,7 +163,7 @@ func (s Service) Apply(ctx context.Context, desired domain.Desired, allowCreate 
 			if err := s.Journal.Save(*entry); err != nil {
 				return result, err
 			}
-			if err := s.Platform.Unlock(ctx, v, desired.MountPoint); err != nil {
+			if err := s.Platform.Unlock(ctx, v); err != nil {
 				return result, err
 			}
 		case reconcile.Mount:

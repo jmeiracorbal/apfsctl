@@ -126,6 +126,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 			if !p.Noop && os.Geteuid() != 0 {
 				return errors.New("APFS mutation requires root; run with sudo and an explicit --mount path")
 			}
+			if !p.Noop {
+				if err := protectMountTarget(*mount); err != nil {
+					return err
+				}
+			}
 			svc := provision.Service{
 				Platform:      apfs.Mutator{Read: client, Interactive: system.ExecRunner{}},
 				Journal:       state.FileJournal{Directory: "/private/var/db/apfsctl"},
@@ -202,17 +207,42 @@ func ensureSafeMountTarget(path string, p reconcile.Plan) error {
 	return nil
 }
 
-// Mutations require the caller to prepare an existing empty directory.
-// Automatically making it as root could silently break ownership in ~/repos.
-func validateWritableMountTarget(path string) error {
+// protectMountTarget keeps writes from silently landing on the startup volume
+// while the APFS volume is absent.
+func protectMountTarget(path string) error {
 	plan := reconcile.Plan{Changes: []reconcile.Change{{Action: reconcile.Mount}}}
 	if err := ensureSafeMountTarget(path, plan); err != nil {
 		return err
 	}
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("create empty mount directory %q before provisioning", path)
+		if err := os.Mkdir(path, 0700); err != nil {
+			return fmt.Errorf("create mount directory %q: %w", path, err)
+		}
+		info, err = os.Lstat(path)
 	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("mount point is not a directory")
+	}
+	if err := os.Chown(path, 0, 0); err != nil {
+		return fmt.Errorf("protect unmounted mount directory ownership: %w", err)
+	}
+	if err := os.Chmod(path, 0); err != nil {
+		return fmt.Errorf("protect unmounted mount directory permissions: %w", err)
+	}
+	return nil
+}
+
+// validateWritableMountTarget checks the already-prepared, empty mount target.
+func validateWritableMountTarget(path string) error {
+	plan := reconcile.Plan{Changes: []reconcile.Change{{Action: reconcile.Mount}}}
+	if err := ensureSafeMountTarget(path, plan); err != nil {
+		return err
+	}
+	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}

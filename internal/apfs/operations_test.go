@@ -38,12 +38,12 @@ func TestCreateEncryptedArguments(t *testing.T) {
 func TestUnlockArguments(t *testing.T) {
 	r := &commandRecorder{}
 	m := Mutator{Interactive: r}
-	err := m.Unlock(context.Background(), domain.Volume{Device: "disk3s2"}, "/Users/test/repos")
+	err := m.Unlock(context.Background(), domain.Volume{Device: "disk3s2"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := strings.Join(r.calls[0], " ")
-	if !strings.Contains(got, "apfs unlockVolume disk3s2 -mountpoint /Users/test/repos") {
+	if !strings.Contains(got, "apfs unlockVolume disk3s2 -nomount") {
 		t.Fatalf("unexpected unlock command: %s", got)
 	}
 }

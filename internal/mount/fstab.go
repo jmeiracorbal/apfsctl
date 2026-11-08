@@ -10,6 +10,9 @@ import (
 
 var uuidPattern = regexp.MustCompile("(?i)^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")
 
+const FstabOptions = "rw,nobrowse,owners"
+const DiskutilOptions = "owners"
+
 type Entry struct {
 	UUID string `json:"uuid"`
 	Path string `json:"path"`
@@ -50,7 +53,7 @@ func Merge(content []byte, e Entry) ([]byte, bool, error) {
 		if !sameUUID && !samePath {
 			continue
 		}
-		if !sameUUID || !samePath || len(fields) != 6 || fields[2] != "apfs" || fields[3] != "rw" || fields[4] != "0" || fields[5] != "0" {
+		if !sameUUID || !samePath || len(fields) != 6 || fields[2] != "apfs" || fields[3] != FstabOptions || fields[4] != "0" || fields[5] != "0" {
 			return nil, false, fmt.Errorf("conflicting fstab entry %q", line)
 		}
 		if found {
@@ -65,6 +68,6 @@ func Merge(content []byte, e Entry) ([]byte, bool, error) {
 	if len(next) > 0 && next[len(next)-1] != '\n' {
 		next = append(next, '\n')
 	}
-	next = append(next, []byte(spec+" "+mp+" apfs rw 0 0\n")...)
+	next = append(next, []byte(spec+" "+mp+" apfs "+FstabOptions+" 0 0\n")...)
 	return next, true, nil
 }

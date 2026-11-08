@@ -30,7 +30,7 @@ func (f *fakePlatform) CreateEncrypted(_ context.Context, c domain.Container, na
 	})
 	return nil
 }
-func (f *fakePlatform) Unlock(_ context.Context, v domain.Volume, path string) error {
+func (f *fakePlatform) Unlock(_ context.Context, v domain.Volume) error {
 	f.actions = append(f.actions, "unlock")
 	if f.fail == "unlock" {
 		return errors.New("interrupted unlock")
@@ -38,7 +38,6 @@ func (f *fakePlatform) Unlock(_ context.Context, v domain.Volume, path string) e
 	for i := range f.snapshot.Volumes {
 		if f.snapshot.Volumes[i].UUID == v.UUID {
 			f.snapshot.Volumes[i].Locked = false
-			f.snapshot.Volumes[i].MountPoint = path
 		}
 	}
 	return nil
@@ -98,7 +97,7 @@ func TestCreateThenNoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Noop || out.VolumeUUID != "NEW" || strings.Join(out.Applied, ",") != "create_encrypted,unlock" {
+	if out.Noop || out.VolumeUUID != "NEW" || strings.Join(out.Applied, ",") != "create_encrypted,unlock,mount" {
 		t.Fatalf("unexpected result: %+v", out)
 	}
 	if j.entry.Phase != "completed" || l.acquisitions != 1 {
@@ -106,7 +105,7 @@ func TestCreateThenNoop(t *testing.T) {
 	}
 	prevSaves := j.saves
 	out, err = s.Apply(context.Background(), d, true)
-	if err != nil || !out.Noop || len(f.actions) != 2 || j.saves != prevSaves || l.acquisitions != 1 {
+	if err != nil || !out.Noop || len(f.actions) != 3 || j.saves != prevSaves || l.acquisitions != 1 {
 		t.Fatalf("repeat must have no side effects: result=%+v error=%v", out, err)
 	}
 }
@@ -119,7 +118,7 @@ func TestResumeFromCreatedLockedVolume(t *testing.T) {
 	})
 	j.entry = &state.Entry{Desired: d, Phase: "creating"}
 	out, err := s.Apply(context.Background(), d, true)
-	if err != nil || strings.Join(f.actions, ",") != "unlock" || out.VolumeUUID != "ALREADY" {
+	if err != nil || strings.Join(f.actions, ",") != "unlock,mount" || out.VolumeUUID != "ALREADY" {
 		t.Fatalf("unexpected recovery: %+v, %v, %v", out, f.actions, err)
 	}
 }
