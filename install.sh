@@ -1,7 +1,7 @@
 #!/bin/bash
 # Install the apfsctl binary from a published GitHub release.
 # Usage: curl -fsSL https://raw.githubusercontent.com/jmeiracorbal/apfsctl/main/install.sh | bash
-# Pin a release with: APFSCTL_VERSION=v0.2.0-beta.3 bash
+# Pin a release with: APFSCTL_VERSION=v0.2.0-beta.4 bash
 
 set -euo pipefail
 

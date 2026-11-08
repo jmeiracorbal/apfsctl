@@ -111,11 +111,6 @@ func (s Service) Apply(ctx context.Context, desired domain.Desired, allowCreate 
 		if !allowCreate && hasAction(plan, reconcile.CreateEncrypted) {
 			return result, errors.New("volume disappeared; refusing creation")
 		}
-		// A prior interrupted creation is ambiguous until an operator
-		// confirms its outcome. Never silently create a second volume.
-		if entry.Phase == "creating" && hasAction(plan, reconcile.CreateEncrypted) {
-			return result, errors.New("previous creation is unresolved; inspect APFS state before retrying")
-		}
 		if plan.Noop {
 			result.Noop = len(result.Applied) == 0
 			result.VolumeUUID = findUUID(snap, desired)
