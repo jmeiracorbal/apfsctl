@@ -24,7 +24,20 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
+	args := os.Args[1:]
+	wizard := len(args) == 0 || args[0] == "setup"
+	if err := run(args, os.Stdout, os.Stderr); err != nil {
+		if wizard {
+			if errors.Is(err, system.ErrDialogCanceled) {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			showErr := (system.AppleScriptPassphraseDialog{}).ShowMessage(ctx, "apfsctl", err.Error())
+			cancel()
+			if showErr == nil {
+				return
+			}
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -36,7 +49,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if len(args) == 0 {
-		return errors.New("usage: apfsctl status | plan | doctor | create | mount | configure | unmount | remove")
+		args = []string{"setup"}
 	}
 	if os.Getenv("APFSCTL_VIFS_UUID") != "" {
 		if len(args) != 1 {
@@ -51,13 +64,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return errors.New("apfsctl requires macOS (APFS); unit tests support other platforms")
 	}
 	timeout := 45 * time.Second
-	if args[0] == "create" || args[0] == "mount" || args[0] == "configure" {
+	if args[0] == "create" || args[0] == "mount" || args[0] == "configure" || args[0] == "setup" {
 		timeout = 10 * time.Minute
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	client := apfs.Client{Run: system.ExecRunner{}}
 	switch args[0] {
+	case "setup":
+		if len(args) != 1 {
+			return errors.New("setup takes no arguments; run apfsctl setup")
+		}
+		return runWizard(ctx, client)
 	case "configure":
 		return runConfigure(ctx, args[1:], client, stdout, stderr)
 	case "status":
@@ -131,8 +149,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 					return err
 				}
 			}
+			credentials := system.NewCredentialSession(system.TerminalPassphraseSource{})
+			defer credentials.Close()
 			svc := provision.Service{
-				Platform:      apfs.Mutator{Read: client, Interactive: system.ExecRunner{}},
+				Platform:      apfs.Mutator{Read: client, Credentials: credentials},
 				Journal:       state.FileJournal{Directory: "/private/var/db/apfsctl"},
 				Lock:          state.FileLock{Path: "/private/var/db/apfsctl/operation.lock"},
 				ValidateMount: validateWritableMountTarget,

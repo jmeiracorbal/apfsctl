@@ -12,14 +12,14 @@ type commandRecorder struct {
 	calls [][]string
 }
 
-func (r *commandRecorder) RunInteractive(_ context.Context, executable string, args ...string) error {
-	r.calls = append(r.calls, append([]string{executable}, args...))
+func (r *commandRecorder) RunWithPassphrase(_ context.Context, prompt, executable string, args ...string) error {
+	r.calls = append(r.calls, append([]string{prompt, executable}, args...))
 	return nil
 }
 
 func TestCreateEncryptedArguments(t *testing.T) {
 	r := &commandRecorder{}
-	m := Mutator{Interactive: r}
+	m := Mutator{Credentials: r}
 	err := m.CreateEncrypted(context.Background(), domain.Container{
 		UUID: "C", Reference: "disk3",
 	}, "repos")
@@ -30,20 +30,20 @@ func TestCreateEncryptedArguments(t *testing.T) {
 		t.Fatalf("expected one command, got %d", len(r.calls))
 	}
 	got := strings.Join(r.calls[0], " ")
-	if !strings.Contains(got, "apfs addVolume disk3 APFS repos -passprompt -nomount") {
+	if !strings.Contains(got, "apfs addVolume disk3 APFS repos -stdinpassphrase -nomount") {
 		t.Fatalf("incorrect APFS command: %s", got)
 	}
 }
 
 func TestUnlockArguments(t *testing.T) {
 	r := &commandRecorder{}
-	m := Mutator{Interactive: r}
+	m := Mutator{Credentials: r}
 	err := m.Unlock(context.Background(), domain.Volume{Device: "disk3s2"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := strings.Join(r.calls[0], " ")
-	if !strings.Contains(got, "apfs unlockVolume disk3s2 -nomount") {
+	if !strings.Contains(got, "apfs unlockVolume disk3s2 -stdinpassphrase -nomount") {
 		t.Fatalf("unexpected unlock command: %s", got)
 	}
 }
