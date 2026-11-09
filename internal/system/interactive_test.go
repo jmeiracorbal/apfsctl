@@ -109,4 +109,3 @@ func TestAppleScriptStringEscapesDialogText(t *testing.T) {
 		t.Fatalf("unexpected AppleScript string %q", got)
 	}
 }
-

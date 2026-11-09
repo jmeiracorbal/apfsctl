@@ -2,7 +2,7 @@
 
 ![macOS](https://img.shields.io/badge/platform-macOS-222222)
 ![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8)
-[![Beta](https://img.shields.io/badge/version-v0.2.0--beta.7-orange)](https://github.com/jmeiracorbal/apfsctl/releases/tag/v0.2.0-beta.7)
+[![Beta](https://img.shields.io/badge/version-v0.2.0--beta.8-orange)](https://github.com/jmeiracorbal/apfsctl/releases/tag/v0.2.0-beta.8)
 
 ## Objective
 
@@ -53,21 +53,21 @@ curl -fsSL https://raw.githubusercontent.com/jmeiracorbal/apfsctl/main/install.s
 To pin a release or choose another install directory:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jmeiracorbal/apfsctl/main/install.sh | APFSCTL_VERSION=v0.2.0-beta.7 bash
+curl -fsSL https://raw.githubusercontent.com/jmeiracorbal/apfsctl/main/install.sh | APFSCTL_VERSION=v0.2.0-beta.8 bash
 curl -fsSL https://raw.githubusercontent.com/jmeiracorbal/apfsctl/main/install.sh | APFSCTL_INSTALL_DIR="$HOME/.local/bin" bash
 ```
 
 The installer detects Apple Silicon or Intel, verifies the archive against the release checksum, and installs the CLI under `~/.local/bin` by default. It does not use `sudo` or create/configure APFS volumes.
 
-For manual installation, download the appropriate archive from [Releases](https://github.com/jmeiracorbal/apfsctl/releases/tag/v0.2.0-beta.7):
+For manual installation, download the appropriate archive from [Releases](https://github.com/jmeiracorbal/apfsctl/releases/tag/v0.2.0-beta.8):
 
-- Apple Silicon: `apfsctl_v0.2.0-beta.7_darwin_arm64.tar.gz`
-- Intel: `apfsctl_v0.2.0-beta.7_darwin_amd64.tar.gz`
+- Apple Silicon: `apfsctl_v0.2.0-beta.8_darwin_arm64.tar.gz`
+- Intel: `apfsctl_v0.2.0-beta.8_darwin_amd64.tar.gz`
 
 Extract and install it (Apple Silicon example; replace `arm64` with `amd64` on Intel):
 
 ```sh
-tar -xzf apfsctl_v0.2.0-beta.7_darwin_arm64.tar.gz
+tar -xzf apfsctl_v0.2.0-beta.8_darwin_arm64.tar.gz
 mkdir -p "$HOME/.local/bin"
 install -m 0755 apfsctl "$HOME/.local/bin/apfsctl"
 "$HOME/.local/bin/apfsctl" version
