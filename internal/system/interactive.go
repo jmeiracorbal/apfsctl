@@ -158,10 +158,10 @@ apfsctlChoice`, appleScriptString(message), appleScriptString(title), strings.Jo
 
 func (AppleScriptPassphraseDialog) ShowMessage(ctx context.Context, title, message string) error {
 	title = appleScriptString(title)
-	message = appleScriptString(message)
+	message = appleScriptTextExpression(message)
 	script := fmt.Sprintf(`set apfsctlResult to ""
 try
- set apfsctlResult to button returned of (display dialog "%s" with title "%s" buttons {"OK"} default button "OK")
+ set apfsctlResult to button returned of (display dialog (%s) with title "%s" buttons {"OK"} default button "OK")
 on error number -128
  set apfsctlResult to ""
 end try
@@ -252,6 +252,16 @@ func appleScriptString(value string) string {
 	value = strings.ReplaceAll(value, `"`, `\"`)
 	value = strings.ReplaceAll(value, "\r", " ")
 	return strings.ReplaceAll(value, "\n", " ")
+}
+
+func appleScriptTextExpression(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	lines := strings.Split(value, "\n")
+	for i, line := range lines {
+		lines[i] = `"` + appleScriptString(line) + `"`
+	}
+	return strings.Join(lines, " & return & ")
 }
 
 func readPassphrase(input *os.File, output io.Writer, prompt string) ([]byte, error) {

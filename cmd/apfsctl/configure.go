@@ -45,12 +45,12 @@ func runConfigure(ctx context.Context, args []string, client apfs.Client, output
 	if *owner < -1 || (*spotlight != "off" && *spotlight != "on" && *spotlight != "keep") || (*events != "keep" && *events != "enable" && *events != "disable") {
 		return errors.New("invalid uid, spotlight, or fsevents policy")
 	}
-	if os.Geteuid() != 0 {
-		return errors.New("configure requires root privileges")
-	}
 	d := domain.Desired{Name: *name, ContainerUUID: *container, MountPoint: *path, Encrypted: true, Browsable: *visibility == "visible"}
 	if err := d.Validate(); err != nil {
 		return err
+	}
+	if os.Geteuid() != 0 {
+		return system.ReexecWithSudo(ctx, append([]string{"configure"}, args...), output, stderr)
 	}
 	snap, err := client.Snapshot(ctx)
 	if err != nil {

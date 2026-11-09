@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,12 +19,14 @@ import (
 	"github.com/jmeiracorbal/apfsctl/internal/system"
 )
 
-func runWizard(ctx context.Context, client apfs.Client) error {
+func runWizard(ctx context.Context, client apfs.Client, progress io.Writer) error {
 	if os.Geteuid() != 0 {
-		return errors.New("APFS setup requires administrator access; run `sudo apfsctl`")
+		return errors.New("APFS setup requires administrator access; launch apfsctl from a terminal")
 	}
 
+	logProgress(progress, "Starting setup.")
 	dialog := system.AppleScriptPassphraseDialog{}
+	logProgress(progress, "Waiting for the volume name dialog...")
 	rawName, err := dialog.PromptText(ctx, "APFS volume name (special characters become hyphens):")
 	if err != nil {
 		return err
@@ -33,14 +36,17 @@ func runWizard(ctx context.Context, client apfs.Client) error {
 		return err
 	}
 	mountPoint := filepath.Join("/Volumes", name)
+	logProgress(progress, "Waiting for the Finder visibility choice...")
 	visibility, err := dialog.PromptChoice(ctx, "apfsctl", "Show this volume in Finder?", "Hidden", "Visible")
 	if err != nil {
 		return err
 	}
+	logProgress(progress, "Waiting for the Spotlight preference...")
 	spotlight, err := dialog.PromptChoice(ctx, "apfsctl", "Spotlight indexing", "Keep current", "Enable", "Disable")
 	if err != nil {
 		return err
 	}
+	logProgress(progress, "Waiting for the FSEvents preference...")
 	events, err := dialog.PromptChoice(ctx, "apfsctl", "Persistent FSEvents logging", "Keep current", "Enable", "Disable")
 	if err != nil {
 		return err
@@ -48,6 +54,7 @@ func runWizard(ctx context.Context, client apfs.Client) error {
 	spotlightSetting := map[string]string{"Keep current": "keep", "Enable": "on", "Disable": "off"}[spotlight]
 	eventsSetting := map[string]string{"Keep current": "keep", "Enable": "enable", "Disable": "disable"}[events]
 
+	logProgress(progress, "Reading current APFS state...")
 	snapshot, err := client.Snapshot(ctx)
 	if err != nil {
 		return err
@@ -64,7 +71,13 @@ func runWizard(ctx context.Context, client apfs.Client) error {
 	if err != nil {
 		return err
 	}
+	if plan.Noop {
+		logProgress(progress, "The volume is already mounted with the requested volume settings.")
+	} else {
+		logProgress(progress, "Reconciling the APFS volume configuration...")
+	}
 	if hasPlannedAction(plan, reconcile.Mount) && !hasPlannedAction(plan, reconcile.Unmount) {
+		logProgress(progress, "Preparing and protecting the mount point...")
 		if err := ensureSafeMountTarget(mountPoint, plan); err != nil {
 			return err
 		}
@@ -87,6 +100,7 @@ func runWizard(ctx context.Context, client apfs.Client) error {
 		Lock:          state.FileLock{Path: "/private/var/db/apfsctl/operation.lock"},
 		ValidateMount: prepareWritableMountTarget,
 	}
+	logProgress(progress, "Applying APFS volume changes. A passphrase prompt may appear if needed...")
 	result, err := service.Apply(ctx, desired, true)
 	if err != nil {
 		return err
@@ -111,6 +125,7 @@ func runWizard(ctx context.Context, client apfs.Client) error {
 			return errors.New("APFS volume identity or mount changed before applying policies")
 		},
 	}
+	logProgress(progress, "Checking and reconciling Finder, Spotlight, and FSEvents settings...")
 	_, err = policies.Apply(ctx, policy.Desired{
 		VolumeUUID: result.VolumeUUID, MountPoint: mountPoint,
 		Browsable: desired.Browsable, OwnerUID: -1,
@@ -119,10 +134,19 @@ func runWizard(ctx context.Context, client apfs.Client) error {
 	if err != nil {
 		return err
 	}
-	return dialog.ShowMessage(ctx, "apfsctl", wizardCompletionMessage(
+	completion := wizardCompletionMessage(
 		name, mountPoint, hasPlannedAction(plan, reconcile.CreateEncrypted), desired.Browsable,
 		spotlightSetting, eventsSetting,
-	))
+	)
+	logProgress(progress, "Setup complete. Volume ready at %s.", mountPoint)
+	return dialog.ShowMessage(ctx, "apfsctl", completion)
+}
+
+func logProgress(output io.Writer, format string, args ...any) {
+	if output == nil {
+		output = os.Stderr
+	}
+	_, _ = fmt.Fprintf(output, "apfsctl: "+format+"\n", args...)
 }
 
 func wizardCompletionMessage(name, mountPoint string, created, browsable bool, spotlight, events string) string {
@@ -134,7 +158,7 @@ func wizardCompletionMessage(name, mountPoint string, created, browsable bool, s
 	if browsable {
 		visibility = "visible"
 	}
-	return fmt.Sprintf("%s %q. Finder: %s; encryption: enabled; Spotlight: %s; FSEvents: %s. Ready at %s.",
+	return fmt.Sprintf("%s %q.\n\nFinder: %s\nencryption: enabled\nSpotlight: %s\nFSEvents: %s\n\nReady at %s.",
 		status, name, visibility, policySettingLabel(spotlight), policySettingLabel(events), mountPoint)
 }
 

@@ -81,7 +81,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 		if len(args) != 1 {
 			return errors.New("setup takes no arguments; run apfsctl setup")
 		}
-		return runWizard(ctx, client)
+		if os.Geteuid() != 0 {
+			return system.ReexecWithSudo(ctx, args, stdout, stderr)
+		}
+		return runWizard(ctx, client, stderr)
 	case "configure":
 		return runConfigure(ctx, args[1:], client, stdout, stderr)
 	case "status":
@@ -159,7 +162,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		}
 		if args[0] == "create" || args[0] == "mount" {
 			if (args[0] == "create" || !p.Noop) && os.Geteuid() != 0 {
-				return errors.New("APFS mutation or policy reconciliation requires root; run with sudo and an explicit --mount path")
+				return system.ReexecWithSudo(ctx, args, stdout, stderr)
 			}
 			if !p.Noop && hasPlannedAction(p, reconcile.Mount) && !hasPlannedAction(p, reconcile.Unmount) {
 				if err := protectMountTarget(*mount); err != nil {
