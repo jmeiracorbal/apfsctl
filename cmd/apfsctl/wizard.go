@@ -11,6 +11,7 @@ import (
 
 	"github.com/jmeiracorbal/apfsctl/internal/apfs"
 	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/policy"
 	"github.com/jmeiracorbal/apfsctl/internal/provision"
 	"github.com/jmeiracorbal/apfsctl/internal/reconcile"
 	"github.com/jmeiracorbal/apfsctl/internal/state"
@@ -32,6 +33,20 @@ func runWizard(ctx context.Context, client apfs.Client) error {
 		return err
 	}
 	mountPoint := filepath.Join("/Volumes", name)
+	visibility, err := dialog.PromptChoice(ctx, "apfsctl", "Show this volume in Finder?", "Hidden", "Visible")
+	if err != nil {
+		return err
+	}
+	spotlight, err := dialog.PromptChoice(ctx, "apfsctl", "Spotlight indexing", "Keep current", "Enable", "Disable")
+	if err != nil {
+		return err
+	}
+	events, err := dialog.PromptChoice(ctx, "apfsctl", "Persistent FSEvents logging", "Keep current", "Enable", "Disable")
+	if err != nil {
+		return err
+	}
+	spotlightSetting := map[string]string{"Keep current": "keep", "Enable": "on", "Disable": "off"}[spotlight]
+	eventsSetting := map[string]string{"Keep current": "keep", "Enable": "enable", "Disable": "disable"}[events]
 
 	snapshot, err := client.Snapshot(ctx)
 	if err != nil {
@@ -43,24 +58,26 @@ func runWizard(ctx context.Context, client apfs.Client) error {
 	}
 	desired := domain.Desired{
 		Name: name, ContainerUUID: container.UUID, MountPoint: mountPoint, Encrypted: true,
+		Browsable: visibility == "Visible",
 	}
 	plan, err := reconcile.Build(desired, snapshot)
 	if err != nil {
 		return err
 	}
-	if plan.Noop {
-		return dialog.ShowMessage(ctx, "apfsctl", fmt.Sprintf("Volume %q is already ready at %s.", name, mountPoint))
-	}
-	if err := ensureSafeMountTarget(mountPoint, plan); err != nil {
-		return err
-	}
-	if err := protectMountTarget(mountPoint); err != nil {
-		return err
+	if hasPlannedAction(plan, reconcile.Mount) && !hasPlannedAction(plan, reconcile.Unmount) {
+		if err := ensureSafeMountTarget(mountPoint, plan); err != nil {
+			return err
+		}
+		if err := protectMountTarget(mountPoint); err != nil {
+			return err
+		}
 	}
 
 	source := system.PassphraseSource(system.AppleScriptPassphraseDialog{})
 	if hasPlannedAction(plan, reconcile.CreateEncrypted) {
 		source = system.ConfirmingPassphraseSource{Dialog: dialog}
+	} else if hasPlannedAction(plan, reconcile.Unlock) {
+		source = system.PassphraseSource(dialog)
 	}
 	credentials := system.NewCredentialSession(source)
 	defer credentials.Close()
@@ -68,12 +85,70 @@ func runWizard(ctx context.Context, client apfs.Client) error {
 		Platform:      apfs.Mutator{Read: client, Credentials: credentials},
 		Journal:       state.FileJournal{Directory: "/private/var/db/apfsctl"},
 		Lock:          state.FileLock{Path: "/private/var/db/apfsctl/operation.lock"},
-		ValidateMount: validateWritableMountTarget,
+		ValidateMount: prepareWritableMountTarget,
 	}
-	if _, err := service.Apply(ctx, desired, true); err != nil {
+	result, err := service.Apply(ctx, desired, true)
+	if err != nil {
 		return err
 	}
-	return dialog.ShowMessage(ctx, "apfsctl", fmt.Sprintf("Volume %q is ready at %s.", name, mountPoint))
+	if result.VolumeUUID == "" {
+		return errors.New("reconciliation completed without identifying the APFS volume")
+	}
+	policies := policy.Service{
+		Platform: policy.MacOS{Run: system.ExecRunner{}},
+		Lock:     state.FileLock{Path: "/private/var/db/apfsctl/operation.lock"},
+		VerifyMount: func(ctx context.Context) error {
+			current, err := client.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+			for _, volume := range current.Volumes {
+				if volume.Name == name && volume.UUID == result.VolumeUUID && volume.MountPoint == mountPoint &&
+					volume.Browsable != nil && *volume.Browsable == desired.Browsable {
+					return nil
+				}
+			}
+			return errors.New("APFS volume identity or mount changed before applying policies")
+		},
+	}
+	_, err = policies.Apply(ctx, policy.Desired{
+		VolumeUUID: result.VolumeUUID, MountPoint: mountPoint,
+		Browsable: desired.Browsable, OwnerUID: -1,
+		Spotlight: spotlightSetting, FSEvents: eventsSetting,
+	})
+	if err != nil {
+		return err
+	}
+	return dialog.ShowMessage(ctx, "apfsctl", wizardCompletionMessage(
+		name, mountPoint, hasPlannedAction(plan, reconcile.CreateEncrypted), desired.Browsable,
+		spotlightSetting, eventsSetting,
+	))
+}
+
+func wizardCompletionMessage(name, mountPoint string, created, browsable bool, spotlight, events string) string {
+	status := "Volume already existed; configuration reconciled"
+	if created {
+		status = "Created encrypted APFS volume"
+	}
+	visibility := "hidden"
+	if browsable {
+		visibility = "visible"
+	}
+	return fmt.Sprintf("%s %q. Finder: %s; encryption: enabled; Spotlight: %s; FSEvents: %s. Ready at %s.",
+		status, name, visibility, policySettingLabel(spotlight), policySettingLabel(events), mountPoint)
+}
+
+func policySettingLabel(setting string) string {
+	switch setting {
+	case "keep":
+		return "unchanged"
+	case "on", "enable":
+		return "enabled"
+	case "off", "disable":
+		return "disabled"
+	default:
+		return "unknown"
+	}
 }
 
 func activeSystemContainer(snapshot domain.Snapshot) (domain.Container, error) {

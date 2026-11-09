@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jmeiracorbal/apfsctl/internal/domain"
 	"github.com/jmeiracorbal/apfsctl/internal/system"
@@ -44,6 +45,10 @@ func (c Client) Snapshot(ctx context.Context) (domain.Snapshot, error) {
 	if len(listing.Containers) == 0 {
 		return domain.Snapshot{}, errors.New("no APFS containers discovered")
 	}
+	mounted, err := c.mountedVolumes(ctx)
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
 	s := domain.Snapshot{Containers: []domain.Container{}, Volumes: []domain.Volume{}}
 	for _, container := range listing.Containers {
 		s.Containers = append(s.Containers, domain.Container{
@@ -59,17 +64,57 @@ func (c Client) Snapshot(ctx context.Context) (domain.Snapshot, error) {
 			if err := c.readPlist(ctx, &info, diskutil, "info", "-plist", v.Device); err != nil {
 				return domain.Snapshot{}, fmt.Errorf("inspect %s: %w", v.Device, err)
 			}
-			s.Volumes = append(s.Volumes, domain.Volume{
+			volume := domain.Volume{
 				Name: v.Name, UUID: v.UUID, ContainerUUID: container.UUID,
 				Device: v.Device, Encrypted: *v.Encryption, Locked: *v.Locked,
 				MountPoint: info.MountPoint, Roles: v.Roles,
-			})
+			}
+			if info.MountPoint != "" {
+				state, ok := mounted[v.Device]
+				if !ok || state.path != info.MountPoint {
+					return domain.Snapshot{}, fmt.Errorf("Finder visibility unavailable for mounted volume %q", v.Name)
+				}
+				browsable := state.browsable
+				volume.Browsable = &browsable
+			}
+			s.Volumes = append(s.Volumes, volume)
 		}
 	}
 	if err := s.Validate(); err != nil {
 		return domain.Snapshot{}, err
 	}
 	return s, nil
+}
+
+type mountState struct {
+	path      string
+	browsable bool
+}
+
+func (c Client) mountedVolumes(ctx context.Context) (map[string]mountState, error) {
+	output, err := c.Run.Run(ctx, "/sbin/mount", nil)
+	if err != nil {
+		return nil, fmt.Errorf("inspect mounted filesystem options: %w", err)
+	}
+	result := make(map[string]mountState)
+	for _, line := range strings.Split(string(output), "\n") {
+		separator := strings.Index(line, " on ")
+		optionsStart := strings.LastIndex(line, " (")
+		if separator <= 0 || optionsStart <= separator+4 || !strings.HasSuffix(line, ")") {
+			continue
+		}
+		device := strings.TrimPrefix(strings.TrimSpace(line[:separator]), "/dev/")
+		path := strings.TrimSpace(line[separator+4 : optionsStart])
+		browsable := true
+		for _, option := range strings.Split(line[optionsStart+2:len(line)-1], ",") {
+			if strings.TrimSpace(option) == "nobrowse" {
+				browsable = false
+				break
+			}
+		}
+		result[device] = mountState{path: path, browsable: browsable}
+	}
+	return result, nil
 }
 
 func (c Client) readPlist(ctx context.Context, out any, executable string, args ...string) error {

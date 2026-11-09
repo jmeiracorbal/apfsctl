@@ -72,10 +72,15 @@ func (f FileJournal) Load(d domain.Desired) (*Entry, error) {
 	if err := json.NewDecoder(file).Decode(&entry); err != nil {
 		return nil, fmt.Errorf("invalid operation journal: %w", err)
 	}
-	if entry.Desired != d {
+	if !sameVolumeIdentity(entry.Desired, d) {
 		return nil, errors.New("operation journal conflicts with requested configuration")
 	}
+	entry.Desired = d
 	return &entry, nil
+}
+
+func sameVolumeIdentity(a, b domain.Desired) bool {
+	return strings.EqualFold(a.ContainerUUID, b.ContainerUUID) && a.Name == b.Name
 }
 
 func (f FileJournal) Save(entry Entry) error {

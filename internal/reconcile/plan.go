@@ -13,6 +13,7 @@ const (
 	CreateEncrypted Action = "create_encrypted"
 	Unlock          Action = "unlock"
 	Mount           Action = "mount"
+	Unmount         Action = "unmount"
 )
 
 type Change struct {
@@ -81,6 +82,14 @@ func Build(d domain.Desired, s domain.Snapshot) (Plan, error) {
 		return Plan{}, fmt.Errorf("volume %q is already mounted at %q", d.Name, found.MountPoint)
 	}
 	if found.MountPoint == d.MountPoint {
+		if found.Browsable == nil {
+			return Plan{}, fmt.Errorf("cannot determine Finder visibility for mounted volume %q", d.Name)
+		}
+		if *found.Browsable != d.Browsable {
+			p.Changes = append(p.Changes, Change{Action: Unmount, Reason: "mounted volume visibility differs from requested setting"})
+			p.Changes = append(p.Changes, Change{Action: Mount, Reason: "remount volume with requested Finder visibility"})
+			return p, nil
+		}
 		p.Noop = true
 		return p, nil
 	}

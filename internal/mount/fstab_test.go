@@ -44,3 +44,20 @@ func TestSpaceEscaping(t *testing.T) {
 		t.Fatalf("escaped fstab record incorrect: %q, %v", content, err)
 	}
 }
+
+func TestMergeUpdatesManagedVisibility(t *testing.T) {
+	hidden := Entry{UUID: uuid, Path: "/Volumes/repos", Browsable: false}
+	visible := Entry{UUID: uuid, Path: "/Volumes/repos", Browsable: true}
+	initial, changed, err := Merge(nil, hidden)
+	if err != nil || !changed || !bytes.Contains(initial, []byte("rw,nobrowse,owners")) {
+		t.Fatalf("hidden record was not created: %q, %v", initial, err)
+	}
+	updated, changed, err := Merge(initial, visible)
+	if err != nil || !changed || !bytes.Contains(updated, []byte("rw,owners")) || bytes.Contains(updated, []byte("nobrowse")) {
+		t.Fatalf("visibility change was not reconciled: %q, %v", updated, err)
+	}
+	again, changed, err := Merge(updated, visible)
+	if err != nil || changed || !bytes.Equal(updated, again) {
+		t.Fatalf("repeat should be idempotent: %q, %v", again, err)
+	}
+}

@@ -20,6 +20,22 @@ func TestSanitizeVolumeName(t *testing.T) {
 	}
 }
 
+func TestWizardCompletionMessageReportsExistingVolumeAndAppliedSettings(t *testing.T) {
+	got := wizardCompletionMessage("Proyectos", "/Volumes/Proyectos", false, true, "off", "keep")
+	for _, want := range []string{
+		"Volume already existed; configuration reconciled",
+		"Finder: visible",
+		"encryption: enabled",
+		"Spotlight: disabled",
+		"FSEvents: unchanged",
+		"Ready at /Volumes/Proyectos",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("completion message %q does not contain %q", got, want)
+		}
+	}
+}
+
 func TestActiveSystemContainerUsesMountedDataVolume(t *testing.T) {
 	snapshot := domain.Snapshot{
 		Containers: []domain.Container{

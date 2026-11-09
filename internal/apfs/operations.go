@@ -48,14 +48,29 @@ func (m Mutator) Unlock(ctx context.Context, volume domain.Volume) error {
 	return nil
 }
 
-func (m Mutator) Mount(ctx context.Context, volume domain.Volume, mountPoint string) error {
+func (m Mutator) Mount(ctx context.Context, volume domain.Volume, mountPoint string, browsable bool) error {
 	if m.Read.Run == nil {
 		return errors.New("APFS runner not configured")
 	}
-	_, err := m.Read.Run.Run(ctx, diskutil, nil, "mount", "nobrowse", "-mountOptions", mount.DiskutilOptions,
+	args := []string{"mount"}
+	if !browsable {
+		args = append(args, "nobrowse")
+	}
+	args = append(args, "-mountOptions", mount.DiskutilOptions,
 		"-mountPoint", mountPoint, volume.Device)
+	_, err := m.Read.Run.Run(ctx, diskutil, nil, args...)
 	if err != nil {
 		return fmt.Errorf("mount APFS volume: %w", err)
+	}
+	return nil
+}
+
+func (m Mutator) Unmount(ctx context.Context, volume domain.Volume) error {
+	if m.Read.Run == nil {
+		return errors.New("APFS runner not configured")
+	}
+	if _, err := m.Read.Run.Run(ctx, diskutil, nil, "unmount", volume.Device); err != nil {
+		return fmt.Errorf("unmount APFS volume: %w", err)
 	}
 	return nil
 }

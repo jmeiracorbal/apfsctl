@@ -15,7 +15,7 @@ type fakePlatform struct {
 	writes    []string
 }
 
-func (f *fakePlatform) EnsureFstab(_ context.Context, _, _ string) (bool, error) {
+func (f *fakePlatform) EnsureFstab(_ context.Context, _, _ string, _ bool) (bool, error) {
 	if f.fstab {
 		return false, nil
 	}
@@ -31,10 +31,20 @@ func (f *fakePlatform) DisableSpotlight(_ context.Context, _ string) error {
 	f.writes = append(f.writes, "spotlight")
 	return nil
 }
+func (f *fakePlatform) EnableSpotlight(_ context.Context, _ string) error {
+	f.spotlight = true
+	f.writes = append(f.writes, "spotlight_on")
+	return nil
+}
 func (f *fakePlatform) FSEventsDisabled(_ string) (bool, error) { return f.events, nil }
 func (f *fakePlatform) DisableFSEvents(_ string) error {
 	f.events = true
 	f.writes = append(f.writes, "fsevents")
+	return nil
+}
+func (f *fakePlatform) EnableFSEvents(_ string) error {
+	f.events = false
+	f.writes = append(f.writes, "fsevents_enable")
 	return nil
 }
 func (f *fakePlatform) OwnerUID(_ string) (int, error) { return f.owner, nil }
@@ -55,7 +65,7 @@ func TestApplyIdempotentAndPreservesFSEvents(t *testing.T) {
 	p := &fakePlatform{spotlight: true, owner: 0}
 	lock := &fakeLock{}
 	svc := Service{Platform: p, Lock: lock, VerifyMount: func(context.Context) error { return nil }}
-	d := Desired{VolumeUUID: "A", MountPoint: "/test", OwnerUID: 501, SpotlightOff: true}
+	d := Desired{VolumeUUID: "A", MountPoint: "/test", OwnerUID: 501, Spotlight: "off", FSEvents: "keep"}
 	got, err := svc.Apply(context.Background(), d)
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +84,7 @@ func TestFailClosedMountVerification(t *testing.T) {
 	svc := Service{Platform: p, Lock: &fakeLock{}, VerifyMount: func(context.Context) error {
 		return errors.New("unmounted")
 	}}
-	if _, err := svc.Apply(context.Background(), Desired{OwnerUID: -1}); err == nil || len(p.writes) != 0 {
+	if _, err := svc.Apply(context.Background(), Desired{OwnerUID: -1, Spotlight: "keep", FSEvents: "keep"}); err == nil || len(p.writes) != 0 {
 		t.Fatal("must fail before writing")
 	}
 }
@@ -82,12 +92,23 @@ func TestFailClosedMountVerification(t *testing.T) {
 func TestOptionalDisableEvents(t *testing.T) {
 	p := &fakePlatform{fstab: true}
 	svc := Service{Platform: p, Lock: &fakeLock{}, VerifyMount: func(context.Context) error { return nil }}
-	_, err := svc.Apply(context.Background(), Desired{DisableFSEvents: true, OwnerUID: -1})
+	_, err := svc.Apply(context.Background(), Desired{FSEvents: "disable", Spotlight: "keep", OwnerUID: -1})
 	if err != nil || !p.events {
 		t.Fatalf("marker should be added: %v", err)
 	}
-	_, err = svc.Apply(context.Background(), Desired{DisableFSEvents: true, OwnerUID: -1})
+	_, err = svc.Apply(context.Background(), Desired{FSEvents: "disable", Spotlight: "keep", OwnerUID: -1})
 	if err != nil || len(p.writes) != 1 {
 		t.Fatalf("must not rewrite marker: %v", err)
+	}
+}
+
+func TestApplyCanRestoreSpotlightAndFSEvents(t *testing.T) {
+	p := &fakePlatform{spotlight: false, events: true, fstab: true}
+	svc := Service{Platform: p, Lock: &fakeLock{}, VerifyMount: func(context.Context) error { return nil }}
+	got, err := svc.Apply(context.Background(), Desired{
+		Spotlight: "on", FSEvents: "enable", OwnerUID: -1,
+	})
+	if err != nil || got.Noop || p.spotlight != true || p.events != false {
+		t.Fatalf("settings should be restored: result=%+v platform=%+v err=%v", got, p, err)
 	}
 }

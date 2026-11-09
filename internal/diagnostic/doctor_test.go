@@ -8,10 +8,11 @@ import (
 
 func TestHealthyWhenConverged(t *testing.T) {
 	d := domain.Desired{Name: "repos", ContainerUUID: "C", MountPoint: "/Users/test/repos", Encrypted: true}
+	browsable := false
 	s := domain.Snapshot{
 		Containers: []domain.Container{{UUID: "C", Reference: "disk2"}},
 		Volumes: []domain.Volume{{UUID: "V", Name: "repos", Device: "disk2s1",
-			ContainerUUID: "C", Encrypted: true, MountPoint: d.MountPoint}},
+			ContainerUUID: "C", Encrypted: true, MountPoint: d.MountPoint, Browsable: &browsable}},
 	}
 	r := Inspect(s, &d)
 	if !r.Healthy || r.Plan == nil || !r.Plan.Noop {

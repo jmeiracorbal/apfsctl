@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/jmeiracorbal/apfsctl/internal/diagnostic"
 	"github.com/jmeiracorbal/apfsctl/internal/domain"
 	"github.com/jmeiracorbal/apfsctl/internal/mount"
+	"github.com/jmeiracorbal/apfsctl/internal/policy"
 	"github.com/jmeiracorbal/apfsctl/internal/provision"
 	"github.com/jmeiracorbal/apfsctl/internal/reconcile"
 	"github.com/jmeiracorbal/apfsctl/internal/state"
@@ -55,9 +58,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 		if len(args) != 1 {
 			return errors.New("fstab editor requires exactly one temporary file")
 		}
+		browsable, err := strconv.ParseBool(os.Getenv("APFSCTL_VIFS_BROWSABLE"))
+		if err != nil {
+			return errors.New("fstab editor requires an explicit visibility setting")
+		}
 		return mount.EditTemporary(args[0], mount.Entry{
-			UUID: os.Getenv("APFSCTL_VIFS_UUID"),
-			Path: os.Getenv("APFSCTL_VIFS_PATH"),
+			UUID: os.Getenv("APFSCTL_VIFS_UUID"), Path: os.Getenv("APFSCTL_VIFS_PATH"), Browsable: browsable,
 		})
 	}
 	if runtime.GOOS != "darwin" {
@@ -92,6 +98,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 		flags.SetOutput(stderr)
 		name := flags.String("name", "repos", "APFS volume name")
 		container := flags.String("container", "", "APFS container UUID")
+		visibility := flags.String("visibility", "", "required Finder visibility: hidden or visible")
+		spotlight := flags.String("spotlight", "keep", "create policy: keep, on, or off")
+		events := flags.String("fsevents", "keep", "create policy: keep, enable, or disable")
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return err
@@ -104,8 +113,16 @@ func run(args []string, stdout, stderr io.Writer) error {
 			return errors.New("unexpected positional arguments")
 		}
 		var desired *domain.Desired
-		if args[0] == "plan" || args[0] == "create" || args[0] == "mount" || *container != "" {
-			d := domain.Desired{Name: *name, ContainerUUID: *container, MountPoint: *mount, Encrypted: true}
+		needsDesired := args[0] == "plan" || args[0] == "create" || args[0] == "mount" || *container != ""
+		if needsDesired && *visibility != "hidden" && *visibility != "visible" {
+			return errors.New("--visibility is required and must be hidden or visible")
+		}
+		if (*spotlight != "keep" && *spotlight != "on" && *spotlight != "off") ||
+			(*events != "keep" && *events != "enable" && *events != "disable") {
+			return errors.New("--spotlight must be keep, on, or off; --fsevents must be keep, enable, or disable")
+		}
+		if needsDesired {
+			d := domain.Desired{Name: *name, ContainerUUID: *container, MountPoint: *mount, Encrypted: true, Browsable: *visibility == "visible"}
 			if err := d.Validate(); err != nil {
 				return err
 			}
@@ -135,16 +152,16 @@ func run(args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if !p.Noop {
+		if !p.Noop && hasPlannedAction(p, reconcile.Mount) && !hasPlannedAction(p, reconcile.Unmount) {
 			if err := ensureSafeMountTarget(p.Desired.MountPoint, p); err != nil {
 				return err
 			}
 		}
 		if args[0] == "create" || args[0] == "mount" {
-			if !p.Noop && os.Geteuid() != 0 {
-				return errors.New("APFS mutation requires root; run with sudo and an explicit --mount path")
+			if (args[0] == "create" || !p.Noop) && os.Geteuid() != 0 {
+				return errors.New("APFS mutation or policy reconciliation requires root; run with sudo and an explicit --mount path")
 			}
-			if !p.Noop {
+			if !p.Noop && hasPlannedAction(p, reconcile.Mount) && !hasPlannedAction(p, reconcile.Unmount) {
 				if err := protectMountTarget(*mount); err != nil {
 					return err
 				}
@@ -155,11 +172,42 @@ func run(args []string, stdout, stderr io.Writer) error {
 				Platform:      apfs.Mutator{Read: client, Credentials: credentials},
 				Journal:       state.FileJournal{Directory: "/private/var/db/apfsctl"},
 				Lock:          state.FileLock{Path: "/private/var/db/apfsctl/operation.lock"},
-				ValidateMount: validateWritableMountTarget,
+				ValidateMount: prepareWritableMountTarget,
 			}
 			result, err := svc.Apply(ctx, *desired, args[0] == "create")
 			if err != nil {
 				return err
+			}
+			if args[0] == "create" {
+				policies := policy.Service{
+					Platform: policy.MacOS{Run: system.ExecRunner{}},
+					Lock:     state.FileLock{Path: "/private/var/db/apfsctl/operation.lock"},
+					VerifyMount: func(ctx context.Context) error {
+						current, err := client.Snapshot(ctx)
+						if err != nil {
+							return err
+						}
+						for _, volume := range current.Volumes {
+							if volume.Name == desired.Name && strings.EqualFold(volume.UUID, result.VolumeUUID) &&
+								volume.MountPoint == desired.MountPoint && volume.Browsable != nil && *volume.Browsable == desired.Browsable {
+								return nil
+							}
+						}
+						return errors.New("APFS volume identity or mount changed before applying policies")
+					},
+				}
+				policyResult, err := policies.Apply(ctx, policy.Desired{
+					VolumeUUID: result.VolumeUUID, MountPoint: desired.MountPoint,
+					Browsable: desired.Browsable, OwnerUID: -1,
+					Spotlight: *spotlight, FSEvents: *events,
+				})
+				if err != nil {
+					return err
+				}
+				return printJSON(stdout, struct {
+					Volume   provision.Result `json:"volume"`
+					Policies policy.Result    `json:"policies"`
+				}{Volume: result, Policies: policyResult})
 			}
 			return printJSON(stdout, result)
 		}
@@ -254,6 +302,13 @@ func protectMountTarget(path string) error {
 		return fmt.Errorf("protect unmounted mount directory permissions: %w", err)
 	}
 	return nil
+}
+
+func prepareWritableMountTarget(path string) error {
+	if err := protectMountTarget(path); err != nil {
+		return err
+	}
+	return validateWritableMountTarget(path)
 }
 
 // validateWritableMountTarget checks the already-prepared, empty mount target.

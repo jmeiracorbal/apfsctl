@@ -15,6 +15,7 @@ type Desired struct {
 	ContainerUUID string `json:"container_uuid"`
 	MountPoint    string `json:"mount_point"`
 	Encrypted     bool   `json:"encrypted"`
+	Browsable     bool   `json:"browsable"`
 }
 
 func (d Desired) Validate() error {
@@ -52,6 +53,7 @@ type Volume struct {
 	Encrypted     bool     `json:"encrypted"`
 	Locked        bool     `json:"locked"`
 	MountPoint    string   `json:"mount_point,omitempty"`
+	Browsable     *bool    `json:"browsable,omitempty"`
 	Roles         []string `json:"roles,omitempty"`
 }
 

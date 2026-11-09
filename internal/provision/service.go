@@ -15,7 +15,8 @@ type Platform interface {
 	Snapshot(context.Context) (domain.Snapshot, error)
 	CreateEncrypted(context.Context, domain.Container, string) error
 	Unlock(context.Context, domain.Volume) error
-	Mount(context.Context, domain.Volume, string) error
+	Mount(context.Context, domain.Volume, string, bool) error
+	Unmount(context.Context, domain.Volume) error
 }
 
 type Journal interface {
@@ -69,8 +70,10 @@ func (s Service) Apply(ctx context.Context, desired domain.Desired, allowCreate 
 		result.VolumeUUID = findUUID(first, desired)
 		return result, nil
 	}
-	if err := s.ValidateMount(desired.MountPoint); err != nil {
-		return result, err
+	if firstAction(p) != reconcile.Unmount {
+		if err := s.ValidateMount(desired.MountPoint); err != nil {
+			return result, err
+		}
 	}
 	release, err := s.Lock.Acquire()
 	if err != nil {
@@ -126,10 +129,12 @@ func (s Service) Apply(ctx context.Context, desired domain.Desired, allowCreate 
 		if len(plan.Changes) == 0 {
 			return result, errors.New("non-converged plan has no changes")
 		}
-		if err := s.ValidateMount(desired.MountPoint); err != nil {
-			return result, err
-		}
 		action := plan.Changes[0].Action
+		if action == reconcile.CreateEncrypted || action == reconcile.Mount {
+			if err := s.ValidateMount(desired.MountPoint); err != nil {
+				return result, err
+			}
+		}
 		switch action {
 		case reconcile.CreateEncrypted:
 			var container *domain.Container
@@ -161,6 +166,18 @@ func (s Service) Apply(ctx context.Context, desired domain.Desired, allowCreate 
 			if err := s.Platform.Unlock(ctx, v); err != nil {
 				return result, err
 			}
+		case reconcile.Unmount:
+			v, ok := findVolume(snap, desired)
+			if !ok || v.MountPoint != desired.MountPoint {
+				return result, errors.New("volume changed before unmount")
+			}
+			entry.Phase = "unmounting"
+			if err := s.Journal.Save(*entry); err != nil {
+				return result, err
+			}
+			if err := s.Platform.Unmount(ctx, v); err != nil {
+				return result, err
+			}
 		case reconcile.Mount:
 			v, ok := findVolume(snap, desired)
 			if !ok {
@@ -170,7 +187,7 @@ func (s Service) Apply(ctx context.Context, desired domain.Desired, allowCreate 
 			if err := s.Journal.Save(*entry); err != nil {
 				return result, err
 			}
-			if err := s.Platform.Mount(ctx, v, desired.MountPoint); err != nil {
+			if err := s.Platform.Mount(ctx, v, desired.MountPoint, desired.Browsable); err != nil {
 				return result, err
 			}
 		default:
@@ -195,6 +212,13 @@ func (s Service) Apply(ctx context.Context, desired domain.Desired, allowCreate 
 		result.Applied = append(result.Applied, string(action))
 	}
 	return result, errors.New("APFS reconciliation exceeded maximum safe operations")
+}
+
+func firstAction(p reconcile.Plan) reconcile.Action {
+	if len(p.Changes) == 0 {
+		return ""
+	}
+	return p.Changes[0].Action
 }
 
 func hasAction(p reconcile.Plan, action reconcile.Action) bool {

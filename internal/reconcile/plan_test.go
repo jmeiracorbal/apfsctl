@@ -16,7 +16,17 @@ func snapshot(vols ...domain.Volume) domain.Snapshot {
 }
 
 func volume() domain.Volume {
-	return domain.Volume{Name: "repos", UUID: "VOL-1", ContainerUUID: "CONTAINER", Device: "disk3s1", Encrypted: true, MountPoint: "/Users/test/repos"}
+	browsable := false
+	return domain.Volume{Name: "repos", UUID: "VOL-1", ContainerUUID: "CONTAINER", Device: "disk3s1", Encrypted: true, MountPoint: "/Users/test/repos", Browsable: &browsable}
+}
+
+func TestVisibilityDriftUnmountsAndRemounts(t *testing.T) {
+	d := desired()
+	d.Browsable = true
+	p, err := Build(d, snapshot(volume()))
+	if err != nil || p.Noop || len(p.Changes) != 2 || p.Changes[0].Action != Unmount || p.Changes[1].Action != Mount {
+		t.Fatalf("visibility drift should remount the volume: %+v, %v", p, err)
+	}
 }
 
 func TestNoopWhenConverged(t *testing.T) {

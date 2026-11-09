@@ -42,7 +42,7 @@ func (f *fakePlatform) Unlock(_ context.Context, v domain.Volume) error {
 	}
 	return nil
 }
-func (f *fakePlatform) Mount(_ context.Context, v domain.Volume, path string) error {
+func (f *fakePlatform) Mount(_ context.Context, v domain.Volume, path string, browsable bool) error {
 	f.actions = append(f.actions, "mount")
 	if f.fail == "mount" {
 		return errors.New("interrupted mount")
@@ -50,6 +50,17 @@ func (f *fakePlatform) Mount(_ context.Context, v domain.Volume, path string) er
 	for i := range f.snapshot.Volumes {
 		if f.snapshot.Volumes[i].UUID == v.UUID {
 			f.snapshot.Volumes[i].MountPoint = path
+			f.snapshot.Volumes[i].Browsable = &browsable
+		}
+	}
+	return nil
+}
+func (f *fakePlatform) Unmount(_ context.Context, v domain.Volume) error {
+	f.actions = append(f.actions, "unmount")
+	for i := range f.snapshot.Volumes {
+		if f.snapshot.Volumes[i].UUID == v.UUID {
+			f.snapshot.Volumes[i].MountPoint = ""
+			f.snapshot.Volumes[i].Browsable = nil
 		}
 	}
 	return nil
@@ -61,8 +72,11 @@ type memoryJournal struct {
 }
 
 func (m *memoryJournal) Load(d domain.Desired) (*state.Entry, error) {
-	if m.entry != nil && m.entry.Desired != d {
+	if m.entry != nil && (m.entry.Desired.Name != d.Name || m.entry.Desired.ContainerUUID != d.ContainerUUID) {
 		return nil, errors.New("journal conflict")
+	}
+	if m.entry != nil {
+		m.entry.Desired = d
 	}
 	return m.entry, nil
 }
@@ -80,7 +94,7 @@ func (l *fakeLock) Acquire() (func() error, error) {
 }
 
 func fixture() (domain.Desired, *fakePlatform, *memoryJournal, *fakeLock, Service) {
-	d := domain.Desired{Name: "repos", ContainerUUID: "C", MountPoint: "/Users/test/repos", Encrypted: true}
+	d := domain.Desired{Name: "repos", ContainerUUID: "C", MountPoint: "/Users/test/repos", Encrypted: true, Browsable: false}
 	f := &fakePlatform{snapshot: domain.Snapshot{
 		Containers: []domain.Container{{UUID: "C", Reference: "disk3", FreeBytes: 10_000_000_000}},
 		Volumes:    []domain.Volume{},
@@ -120,6 +134,20 @@ func TestResumeFromCreatedLockedVolume(t *testing.T) {
 	out, err := s.Apply(context.Background(), d, true)
 	if err != nil || strings.Join(f.actions, ",") != "unlock,mount" || out.VolumeUUID != "ALREADY" {
 		t.Fatalf("unexpected recovery: %+v, %v, %v", out, f.actions, err)
+	}
+}
+
+func TestSameVolumeCanReconcileVisibility(t *testing.T) {
+	d, f, _, _, s := fixture()
+	visible := true
+	f.snapshot.Volumes = append(f.snapshot.Volumes, domain.Volume{
+		Name: d.Name, UUID: "EXISTING", ContainerUUID: d.ContainerUUID,
+		Device: "disk3s2", Encrypted: true, MountPoint: d.MountPoint, Browsable: &visible,
+	})
+	out, err := s.Apply(context.Background(), d, false)
+	if err != nil || strings.Join(f.actions, ",") != "unmount,mount" ||
+		strings.Join(out.Applied, ",") != "unmount,mount" || f.snapshot.Volumes[0].Browsable == nil || *f.snapshot.Volumes[0].Browsable {
+		t.Fatalf("same-name reconciliation should update visibility: result=%+v actions=%v err=%v", out, f.actions, err)
 	}
 }
 

@@ -118,6 +118,44 @@ func (AppleScriptPassphraseDialog) PromptText(ctx context.Context, prompt string
 	return string(answer), nil
 }
 
+func (AppleScriptPassphraseDialog) PromptChoice(ctx context.Context, title, message string, choices ...string) (string, error) {
+	if len(choices) < 2 {
+		return "", errors.New("choice dialog requires at least two options")
+	}
+	buttons := make([]string, 0, len(choices))
+	for _, choice := range choices {
+		if strings.TrimSpace(choice) == "" {
+			return "", errors.New("choice dialog options cannot be empty")
+		}
+		buttons = append(buttons, `"`+appleScriptString(choice)+`"`)
+	}
+	script := fmt.Sprintf(`set apfsctlChoice to ""
+try
+ set apfsctlChoice to button returned of (display dialog "%s" with title "%s" buttons {%s} default button "%s")
+on error number -128
+ set apfsctlChoice to "__APFSCTL_DIALOG_CANCELED__"
+end try
+apfsctlChoice`, appleScriptString(message), appleScriptString(title), strings.Join(buttons, ", "), appleScriptString(choices[0]))
+	cmd, err := appleScriptCommand(ctx, script)
+	if err != nil {
+		return "", err
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		return "", errors.New("choice dialog is unavailable; use a logged-in GUI session")
+	}
+	choice := strings.TrimSpace(string(output))
+	if choice == "__APFSCTL_DIALOG_CANCELED__" {
+		return "", ErrDialogCanceled
+	}
+	for _, valid := range choices {
+		if choice == valid {
+			return choice, nil
+		}
+	}
+	return "", errors.New("choice dialog returned an unexpected option")
+}
+
 func (AppleScriptPassphraseDialog) ShowMessage(ctx context.Context, title, message string) error {
 	title = appleScriptString(title)
 	message = appleScriptString(message)

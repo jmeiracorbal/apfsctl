@@ -7,19 +7,22 @@ import (
 )
 
 type Desired struct {
-	VolumeUUID      string
-	MountPoint      string
-	OwnerUID        int // -1 leaves ownership unchanged
-	SpotlightOff    bool
-	DisableFSEvents bool // default false preserves FSEvents state
+	VolumeUUID string
+	MountPoint string
+	Browsable  bool
+	OwnerUID   int    // -1 leaves ownership unchanged
+	Spotlight  string // keep, on, or off
+	FSEvents   string // keep, enable, or disable
 }
 
 type Platform interface {
-	EnsureFstab(context.Context, string, string) (bool, error)
+	EnsureFstab(context.Context, string, string, bool) (bool, error)
 	SpotlightEnabled(context.Context, string) (bool, error)
 	DisableSpotlight(context.Context, string) error
+	EnableSpotlight(context.Context, string) error
 	FSEventsDisabled(string) (bool, error)
 	DisableFSEvents(string) error
+	EnableFSEvents(string) error
 	OwnerUID(string) (int, error)
 	ChangeOwner(string, int) error
 }
@@ -46,6 +49,12 @@ func (s Service) Apply(ctx context.Context, d Desired) (result Result, err error
 	if d.OwnerUID < -1 {
 		return result, errors.New("invalid owner UID")
 	}
+	if d.Spotlight != "keep" && d.Spotlight != "on" && d.Spotlight != "off" {
+		return result, errors.New("Spotlight setting must be keep, on, or off")
+	}
+	if d.FSEvents != "keep" && d.FSEvents != "enable" && d.FSEvents != "disable" {
+		return result, errors.New("FSEvents setting must be keep, enable, or disable")
+	}
 	release, err := s.Lock.Acquire()
 	if err != nil {
 		return result, err
@@ -59,7 +68,7 @@ func (s Service) Apply(ctx context.Context, d Desired) (result Result, err error
 	if err = verify(); err != nil {
 		return result, err
 	}
-	changed, err := s.Platform.EnsureFstab(ctx, d.VolumeUUID, d.MountPoint)
+	changed, err := s.Platform.EnsureFstab(ctx, d.VolumeUUID, d.MountPoint, d.Browsable)
 	if err != nil {
 		return result, err
 	}
@@ -67,7 +76,7 @@ func (s Service) Apply(ctx context.Context, d Desired) (result Result, err error
 		result.Noop = false
 		result.Applied = append(result.Applied, "fstab")
 	}
-	if d.SpotlightOff {
+	if d.Spotlight != "keep" {
 		if err = verify(); err != nil {
 			return result, err
 		}
@@ -75,22 +84,29 @@ func (s Service) Apply(ctx context.Context, d Desired) (result Result, err error
 		if e != nil {
 			return result, e
 		}
-		if enabled {
-			if err = s.Platform.DisableSpotlight(ctx, d.MountPoint); err != nil {
-				return result, err
+		wantEnabled := d.Spotlight == "on"
+		if enabled != wantEnabled {
+			if wantEnabled {
+				err = s.Platform.EnableSpotlight(ctx, d.MountPoint)
+			} else {
+				err = s.Platform.DisableSpotlight(ctx, d.MountPoint)
 			}
-			enabled, err = s.Platform.SpotlightEnabled(ctx, d.MountPoint)
 			if err != nil {
 				return result, err
 			}
-			if enabled {
-				return result, errors.New("Spotlight remains enabled after update")
+			updated, verifyErr := s.Platform.SpotlightEnabled(ctx, d.MountPoint)
+			err = verifyErr
+			if err != nil {
+				return result, err
+			}
+			if updated != wantEnabled {
+				return result, fmt.Errorf("Spotlight state did not become %q", d.Spotlight)
 			}
 			result.Noop = false
-			result.Applied = append(result.Applied, "spotlight")
+			result.Applied = append(result.Applied, "spotlight_"+d.Spotlight)
 		}
 	}
-	if d.DisableFSEvents {
+	if d.FSEvents != "keep" {
 		if err = verify(); err != nil {
 			return result, err
 		}
@@ -98,19 +114,26 @@ func (s Service) Apply(ctx context.Context, d Desired) (result Result, err error
 		if e != nil {
 			return result, e
 		}
-		if !disabled {
-			if err = s.Platform.DisableFSEvents(d.MountPoint); err != nil {
-				return result, err
+		wantDisabled := d.FSEvents == "disable"
+		if disabled != wantDisabled {
+			if wantDisabled {
+				err = s.Platform.DisableFSEvents(d.MountPoint)
+			} else {
+				err = s.Platform.EnableFSEvents(d.MountPoint)
 			}
-			disabled, err = s.Platform.FSEventsDisabled(d.MountPoint)
 			if err != nil {
 				return result, err
 			}
-			if !disabled {
-				return result, errors.New("FSEvents marker absent after update")
+			updated, verifyErr := s.Platform.FSEventsDisabled(d.MountPoint)
+			err = verifyErr
+			if err != nil {
+				return result, err
+			}
+			if updated != wantDisabled {
+				return result, fmt.Errorf("FSEvents state did not become %q", d.FSEvents)
 			}
 			result.Noop = false
-			result.Applied = append(result.Applied, "fsevents")
+			result.Applied = append(result.Applied, "fsevents_"+d.FSEvents)
 		}
 	}
 	if d.OwnerUID >= 0 {

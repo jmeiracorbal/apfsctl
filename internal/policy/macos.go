@@ -15,8 +15,8 @@ import (
 
 type MacOS struct{ Run system.Runner }
 
-func (m MacOS) EnsureFstab(ctx context.Context, uuid, path string) (bool, error) {
-	return mount.Ensure(ctx, mount.Entry{UUID: uuid, Path: path})
+func (m MacOS) EnsureFstab(ctx context.Context, uuid, path string, browsable bool) (bool, error) {
+	return mount.Ensure(ctx, mount.Entry{UUID: uuid, Path: path, Browsable: browsable})
 }
 
 func (m MacOS) SpotlightEnabled(ctx context.Context, path string) (bool, error) {
@@ -40,6 +40,11 @@ func (m MacOS) SpotlightEnabled(ctx context.Context, path string) (bool, error) 
 
 func (m MacOS) DisableSpotlight(ctx context.Context, path string) error {
 	_, err := m.Run.Run(ctx, "/usr/bin/mdutil", nil, "-i", "off", path)
+	return err
+}
+
+func (m MacOS) EnableSpotlight(ctx context.Context, path string) error {
+	_, err := m.Run.Run(ctx, "/usr/bin/mdutil", nil, "-i", "on", path)
 	return err
 }
 
@@ -114,6 +119,38 @@ func (m MacOS) DisableFSEvents(path string) error {
 		return err
 	}
 	return syscall.Close(fd)
+}
+
+func (m MacOS) EnableFSEvents(path string) error {
+	if _, err := pathInfo(path); err != nil {
+		return err
+	}
+	dir := filepath.Join(path, ".fseventsd")
+	info, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("unsafe FSEvents directory")
+	}
+	marker := filepath.Join(dir, "no_log")
+	markerInfo, err := os.Lstat(marker)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !markerInfo.Mode().IsRegular() || markerInfo.Mode()&os.ModeSymlink != 0 {
+		return errors.New("unsafe FSEvents marker")
+	}
+	if err := os.Remove(marker); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m MacOS) OwnerUID(path string) (int, error) {
