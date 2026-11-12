@@ -38,7 +38,7 @@ func main() {
 			showErr := (system.AppleScriptPassphraseDialog{}).ShowMessage(ctx, "apfsctl", err.Error())
 			cancel()
 			if showErr == nil {
-				return
+				os.Exit(1)
 			}
 		}
 		fmt.Fprintln(os.Stderr, "error:", err)
