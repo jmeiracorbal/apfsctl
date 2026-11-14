@@ -164,8 +164,7 @@ func (s Store) Write(records []Record) error {
 	if err != nil {
 		return err
 	}
-	data = append(data, '
-')
+	data = append(data, byte(10))
 	old, err := os.ReadFile(s.Path)
 	if err == nil && string(old) == string(data) {
 		return nil
