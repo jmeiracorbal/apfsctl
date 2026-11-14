@@ -83,7 +83,11 @@ func fixture(t *testing.T) (Service, string, string, []managed.Record) {
 }
 func TestMoveCopiesAndVerifies(t *testing.T) {
 	s, src, root, records := fixture(t)
-	dst := filepath.Join(root, "my-api")
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(canonical, "my-api")
 	result, err := s.Move(context.Background(), src, "Projects", records)
 	if err != nil {
 		t.Fatal(err)
