@@ -54,25 +54,37 @@ func runCompletion(ctx context.Context, args []string, client apfs.Client, stdou
 		return err
 	case "targets":
 		records, err := (managed.Store{Path: managed.RegistryPath}).Read()
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		snapshot, err := client.Snapshot(ctx)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		volumes, err := managed.Available(records, snapshot)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		counts := map[string]int{}
-		for _, volume := range volumes { counts[volume.Name]++ }
+		for _, volume := range volumes {
+			counts[volume.Name]++
+		}
 		for _, volume := range volumes {
 			if counts[volume.Name] == 1 {
-				if _, err := fmt.Fprintln(stdout, volume.Name); err != nil { return err }
+				if _, err := fmt.Fprintln(stdout, volume.Name); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
 	case "refresh":
 		if os.Geteuid() != 0 {
-			return system.ReexecWithSudo(ctx, []string{"completion","refresh"}, stdout, stderr)
+			return system.ReexecWithSudo(ctx, []string{"completion", "refresh"}, stdout, stderr)
 		}
-		if err := managed.Refresh(ctx, client.Snapshot); err != nil { return err }
-		_, err := fmt.Fprintln(stdout,"Managed APFS volume registry refreshed.")
+		if err := managed.Refresh(ctx, client.Snapshot); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintln(stdout, "Managed APFS volume registry refreshed.")
 		return err
 	default:
 		return fmt.Errorf("unknown completion command %q", args[0])
@@ -84,9 +96,13 @@ func runMove(ctx context.Context, args []string, client apfs.Client, stdout io.W
 		return errors.New("usage: apfsctl move <source-directory> <managed-volume-name>")
 	}
 	records, err := (managed.Store{Path: managed.RegistryPath}).Read()
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	service := projectmove.Service{Snapshot: client.Snapshot, Copy: projectmove.Ditto{}}
 	result, err := service.Move(ctx, args[0], strings.TrimSpace(args[1]), records)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return printJSON(stdout, result)
 }
