@@ -16,6 +16,7 @@ Manage dedicated, encrypted APFS volumes for development repositories on macOS t
 - Recover safely from interrupted operations using a private journal and an exclusive lock.
 - Configure Finder visibility, persistent APFS mount entries, Spotlight, optional FSEvents suppression, and non-recursive volume ownership.
 - Execute macOS utilities directly without generating Bash scripts.
+- Move project folders to a managed APFS volume by its logical name, with dynamic zsh completion.
 
 ## Requirements
 
@@ -78,6 +79,21 @@ Alternatively, build from source:
 ```sh
 go build -o apfsctl ./cmd/apfsctl
 ```
+
+Use a managed volume name as the destination; no mount path is required:
+
+```sh
+apfsctl move ~/Projects/my-api Repos
+```
+
+To enable Tab completion for managed volume names, add the following to `~/.zshrc`:
+
+```sh
+autoload -Uz compinit && compinit
+eval "$(apfsctl completion zsh)"
+```
+
+For volumes created with an older version, import their existing private operation journals once with `apfsctl completion refresh` (administrator authorization is requested). Completion then uses a read-only registry and the live APFS mount state. Only registered, mounted volumes are suggested, regardless of their mount paths. Moving requires write access to the target volume and preserves the source until the copied directory has been verified.
 
 ## References
 
