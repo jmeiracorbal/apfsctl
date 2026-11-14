@@ -12,6 +12,7 @@ import (
 
 	"github.com/jmeiracorbal/apfsctl/internal/apfs"
 	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/managed"
 	"github.com/jmeiracorbal/apfsctl/internal/policy"
 	"github.com/jmeiracorbal/apfsctl/internal/provision"
 	"github.com/jmeiracorbal/apfsctl/internal/reconcile"
@@ -128,6 +129,9 @@ func runConfigure(ctx context.Context, args []string, client apfs.Client, output
 		FSEvents:   *events,
 	})
 	if err != nil {
+		return err
+	}
+	if err := managed.Refresh(ctx, client.Snapshot); err != nil {
 		return err
 	}
 	return printJSON(output, result)

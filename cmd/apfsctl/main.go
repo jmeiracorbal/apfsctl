@@ -18,6 +18,7 @@ import (
 	"github.com/jmeiracorbal/apfsctl/internal/apfs"
 	"github.com/jmeiracorbal/apfsctl/internal/diagnostic"
 	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/managed"
 	"github.com/jmeiracorbal/apfsctl/internal/mount"
 	"github.com/jmeiracorbal/apfsctl/internal/policy"
 	"github.com/jmeiracorbal/apfsctl/internal/provision"
@@ -73,10 +74,20 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if args[0] == "create" || args[0] == "mount" || args[0] == "configure" || args[0] == "setup" {
 		timeout = 10 * time.Minute
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if args[0] == "move" {
+		ctx, cancel = context.WithCancel(context.Background())
+	} else {
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	}
 	defer cancel()
 	client := apfs.Client{Run: system.ExecRunner{}}
 	switch args[0] {
+	case "move":
+		return runMove(ctx, args[1:], client, stdout)
+	case "completion":
+		return runCompletion(ctx, args[1:], client, stdout, stderr)
 	case "setup":
 		if len(args) != 1 {
 			return errors.New("setup takes no arguments; run apfsctl setup")
@@ -207,10 +218,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 				if err != nil {
 					return err
 				}
+				if err := managed.Refresh(ctx, client.Snapshot); err != nil {
+					return err
+				}
 				return printJSON(stdout, struct {
 					Volume   provision.Result `json:"volume"`
 					Policies policy.Result    `json:"policies"`
 				}{Volume: result, Policies: policyResult})
+			}
+			if os.Geteuid() == 0 {
+				if err := managed.Refresh(ctx, client.Snapshot); err != nil {
+					return err
+				}
 			}
 			return printJSON(stdout, result)
 		}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jmeiracorbal/apfsctl/internal/apfs"
 	"github.com/jmeiracorbal/apfsctl/internal/domain"
+	"github.com/jmeiracorbal/apfsctl/internal/managed"
 	"github.com/jmeiracorbal/apfsctl/internal/policy"
 	"github.com/jmeiracorbal/apfsctl/internal/provision"
 	"github.com/jmeiracorbal/apfsctl/internal/reconcile"
@@ -138,6 +139,9 @@ func runWizard(ctx context.Context, client apfs.Client, progress io.Writer) erro
 		name, mountPoint, hasPlannedAction(plan, reconcile.CreateEncrypted), desired.Browsable,
 		spotlightSetting, eventsSetting,
 	)
+	if err := managed.Refresh(ctx, client.Snapshot); err != nil {
+		return err
+	}
 	logProgress(progress, "Setup complete. Volume ready at %s.", mountPoint)
 	return dialog.ShowMessage(ctx, "apfsctl", completion)
 }
